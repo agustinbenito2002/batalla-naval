@@ -1,0 +1,157 @@
+:root {
+  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  color: #090909;
+  background: #03152f;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+
+body { min-width: 320px; margin: 0; background: #03152f; }
+
+button { font: inherit; }
+
+#app { min-height: 100svh; padding: 21px; }
+
+.game-shell {
+  width: min(100%, 1120px);
+  min-height: calc(100svh - 42px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 102px;
+}
+
+.menu-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding-top: 0;
+}
+
+.menu-button.btn {
+  width: 100%;
+  min-height: 74px;
+  padding: 10px 14px;
+  border-color: #69adbf;
+  background: #8bcfe0;
+  color: #101010;
+  font-size: clamp(19px, 2.2vw, 25px);
+  font-weight: 700;
+  line-height: 1.05;
+  cursor: pointer;
+  transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+}
+
+.menu-button.btn:hover { border-color: #579bad; background: #78c2d5; color: #101010; filter: brightness(1.04); }
+
+.menu-button.btn:active {
+  border-color: #579bad;
+  background: #78c2d5;
+  color: #101010;
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 4px rgba(35, 20, 35, 0.35);
+}
+
+.menu-button.is-selected {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+  filter: brightness(1.12) saturate(1.15);
+}
+
+.username { margin-bottom: 55px; }
+.menu-actions { display: grid; gap: 24px; }
+.exit-button { margin-top: auto; margin-bottom: 0; }
+
+.chat-panel {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: 1fr 64px;
+  border: 1px solid #94b5d0;
+  background: rgba(250, 250, 250, 0.84);
+  box-shadow: 0 2px 6px rgba(50, 60, 75, 0.25);
+}
+
+.chat-history {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 34px 24px 24px;
+  min-height: 360px;
+}
+
+.chat-history h1 {
+  margin: auto 0 0;
+  font-size: clamp(23px, 3vw, 31px);
+  font-style: italic;
+  line-height: 1;
+}
+
+.chat-message {
+  align-self: stretch;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(127, 159, 192, 0.65);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.76);
+  font-size: 16px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.chat-compose {
+  display: grid;
+  grid-template-columns: 1fr 48px;
+  align-items: center;
+  padding: 6px 8px 6px 12px;
+  border-top: 1px solid #94b5d0;
+  background: rgba(233, 241, 247, 0.92);
+}
+
+.chat-compose input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #202020;
+  font: italic 700 clamp(16px, 2vw, 21px) 'Trebuchet MS', sans-serif;
+}
+
+.chat-compose input::placeholder { color: #202020; opacity: 1; }
+
+.send-button.btn {
+  width: 38px;
+  height: 38px;
+  border-color: #69adbf;
+  background: #8bcfe0;
+  color: #101010;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.send-button:active { transform: translateY(1px); }
+
+.menu-button:focus-visible, .send-button:focus-visible {
+  outline: 3px solid #2b70b1;
+  outline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  #app { padding: 16px; }
+  .game-shell {
+    min-height: calc(100svh - 32px);
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .menu-panel { gap: 18px; }
+  .username, .exit-button { margin: 0; }
+  .menu-actions { gap: 12px; }
+  .chat-panel { min-height: 58svh; }
+  .chat-history { min-height: 260px; }
+}
