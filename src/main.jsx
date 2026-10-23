@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './style.css'
-import { showModal } from './modal.js'
+import { useModal } from './Modal.jsx'
 
 const username = localStorage.getItem('battle-naval-current-user') || 'nombre usuario'
 
@@ -11,6 +11,7 @@ function MainMenu() {
   const [messages, setMessages] = useState([])
   const [message, setMessage] = useState('')
   const chatInputRef = useRef(null)
+  const { dialog, showModal } = useModal()
 
   const toggleSelected = (buttonName) => {
     setSelectedButtons((current) => current.includes(buttonName)
@@ -121,6 +122,7 @@ function MainMenu() {
           <button className="btn btn-primary send-button" type="submit" aria-label="Enviar mensaje" title="Enviar mensaje">&#10148;</button>
         </form>
       </section>
+      {dialog}
     </main>
   )
 }
