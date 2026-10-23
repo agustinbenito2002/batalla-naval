@@ -9,7 +9,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(projectRoot, 'index.html'),
-        login: resolve(projectRoot, 'login.html'),
         register: resolve(projectRoot, 'register.html'),
         main: resolve(projectRoot, 'main.html'),
         battle: resolve(projectRoot, 'battle.html'),
