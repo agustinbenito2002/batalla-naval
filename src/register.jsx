@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './login.css'
+import { requestBackend, saveAuthToken } from './backendApi.js'
 
-function PasswordField({ id, label, value, onChange, autoComplete }) {
+function PasswordField({ id, label, value, onChange, autoComplete, minLength }) {
   const [visible, setVisible] = useState(false)
 
   return (
@@ -17,6 +18,8 @@ function PasswordField({ id, label, value, onChange, autoComplete }) {
           autoComplete={autoComplete}
           value={value}
           onChange={onChange}
+          minLength={minLength}
+          required
         />
         <button
           className="btn btn-link password-toggle"
@@ -38,8 +41,9 @@ function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [message, setMessage] = useState('')
   const [registered, setRegistered] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const register = (event) => {
+  const register = async (event) => {
     event.preventDefault()
     const cleanUsername = username.trim()
 
@@ -48,21 +52,30 @@ function RegisterPage() {
       return
     }
 
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(cleanUsername)) {
+      setMessage('El usuario debe tener entre 3 y 20 caracteres: letras, números o guion bajo.')
+      return
+    }
+
     if (password !== confirmPassword) {
       setMessage('Las contraseñas no coinciden.')
       return
     }
 
-    const registeredUsers = JSON.parse(localStorage.getItem('battle-naval-users') || '[]')
-    if (registeredUsers.some((user) => user.username === cleanUsername)) {
-      setMessage('Ese nombre de usuario ya está registrado.')
-      return
+    setIsSubmitting(true)
+    setMessage('')
+    try {
+      const result = await requestBackend('/api/auth/register', {
+        method: 'POST',
+        body: { username: cleanUsername, password },
+      })
+      localStorage.setItem('battle-naval-current-user', result.user?.username || cleanUsername)
+      saveAuthToken(result.token)
+      setRegistered(true)
+    } catch (error) {
+      setMessage(error.message)
+      setIsSubmitting(false)
     }
-
-    registeredUsers.push({ username: cleanUsername, password })
-    localStorage.setItem('battle-naval-users', JSON.stringify(registeredUsers))
-    localStorage.setItem('battle-naval-current-user', cleanUsername)
-    setRegistered(true)
   }
 
   return (
@@ -79,6 +92,10 @@ function RegisterPage() {
               autoComplete="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
+              minLength={3}
+              maxLength={20}
+              pattern="[A-Za-z0-9_]+"
+              required
             />
             <PasswordField
               id="register-password"
@@ -86,6 +103,7 @@ function RegisterPage() {
               autoComplete="new-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              minLength={8}
             />
             <PasswordField
               id="confirm-password"
@@ -95,7 +113,9 @@ function RegisterPage() {
               onChange={(event) => setConfirmPassword(event.target.value)}
             />
             <div className="form-actions">
-              <button className="btn btn-primary form-button" type="submit">registrar usuario</button>
+              <button className="btn btn-primary form-button" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'enviando…' : 'registrar usuario'}
+              </button>
               <button
                 className="btn btn-secondary form-button secondary-button"
                 type="button"

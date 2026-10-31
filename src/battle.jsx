@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './battle.css'
 import { useModal } from './Modal.jsx'
+import { requestBackend } from './backendApi.js'
 
 const BOARD_SIZE = 15
 const BOARD_CELLS = Array.from({ length: BOARD_SIZE ** 2 }, (_, index) => index)
@@ -42,7 +43,9 @@ const getAffectedCells = (center, offsets) => {
 }
 
 function BattlePage() {
-  const isSpectatorMode = new URLSearchParams(window.location.search).get('mode') === 'spectator'
+  const searchParams = new URLSearchParams(window.location.search)
+  const isSpectatorMode = searchParams.get('mode') === 'spectator'
+  const gameId = searchParams.get('gameId')
   const username = localStorage.getItem('battle-naval-current-user') || 'Capitán jugador'
   const [ships, setShips] = useState([])
   const [selectedShipLength, setSelectedShipLength] = useState(2)
@@ -60,11 +63,24 @@ function BattlePage() {
   const [hasGameEnded, setHasGameEnded] = useState(false)
   const [messages, setMessages] = useState([])
   const [message, setMessage] = useState('')
+  const [chatError, setChatError] = useState('')
+  const [gameError, setGameError] = useState('')
   const { dialog, showModal } = useModal()
 
   const placedShipCells = ships.flat()
   const shipCount = ships.length
   const selectedOffsets = getAttackOffsets(selectedAttack)
+
+  const sendGameAction = async (type, payload) => {
+    if (!gameId) {
+      throw new Error('No hay una partida asociada. Inicia la batalla desde el menú principal.')
+    }
+
+    return requestBackend(`/api/games/${encodeURIComponent(gameId)}/actions`, {
+      method: 'POST',
+      body: { username, type, payload },
+    })
+  }
 
   const previewShipAt = (startCell, length = selectedShipLength, direction = orientationIndex) => {
     const row = Math.floor(startCell / BOARD_SIZE)
@@ -143,6 +159,14 @@ function BattlePage() {
         setSelectedShipLength(cells.length)
         return
       }
+      try {
+        await sendGameAction('fleet:ready', { ships: nextShips })
+      } catch (error) {
+        setShips((current) => current.slice(0, -1))
+        setSelectedShipLength(cells.length)
+        setPlacementMessage(error.message)
+        return
+      }
       setIsShipPlaced(true)
     }
   }
@@ -151,6 +175,14 @@ function BattlePage() {
     if (isSpectatorMode || hasGameEnded) return
     if (!isShipPlaced) {
       setPlacementMessage('Primero completa tu flota de 4 barcos antes de disparar.')
+      return
+    }
+
+    setGameError('')
+    try {
+      await sendGameAction('attack', { cell, attackType: selectedAttack })
+    } catch (error) {
+      setGameError(error.message)
       return
     }
 
@@ -190,12 +222,22 @@ function BattlePage() {
     }
   }
 
-  const submitMessage = (event) => {
+  const submitMessage = async (event) => {
     event.preventDefault()
     const trimmedMessage = message.trim()
     if (!trimmedMessage) return
-    setMessages((current) => [...current, trimmedMessage])
-    setMessage('')
+
+    setChatError('')
+    try {
+      await requestBackend('/api/chat/messages', {
+        method: 'POST',
+        body: { username, text: trimmedMessage, gameId },
+      })
+      setMessages((current) => [...current, trimmedMessage])
+      setMessage('')
+    } catch (error) {
+      setChatError(error.message)
+    }
   }
 
   const leaveBattle = async () => {
@@ -266,6 +308,7 @@ function BattlePage() {
               </span>
             </div>
           )}
+          {gameError && <p className="game-error" role="alert">{gameError}</p>}
 
           <div className="boards">
             <section className="board-card">
@@ -402,11 +445,13 @@ function BattlePage() {
         <aside className="chat-panel">
           <div className="chat-topbar"><strong>Batalla naval</strong><span>2 usuarios</span></div>
           <div className="chat-log" aria-live="polite">
+            {!gameId && <p className="game-error">No hay una partida asociada al backend.</p>}
             {messages.map((chatMessage, index) => (
               <p key={`${index}-${chatMessage}`}>
                 <b className="blue-name">{username}:</b> {chatMessage}
               </p>
             ))}
+            {chatError && <p className="game-error" role="alert">{chatError}</p>}
           </div>
           <form className="chat-form" onSubmit={submitMessage}>
             <input

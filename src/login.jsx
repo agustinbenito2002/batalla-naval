@@ -2,24 +2,33 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './login.css'
+import { requestBackend, saveAuthToken } from './backendApi.js'
 
 function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [message, setMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const login = (event) => {
+  const login = async (event) => {
     event.preventDefault()
-    const registeredUsers = JSON.parse(localStorage.getItem('battle-naval-users') || '[]')
+    setIsSubmitting(true)
+    setMessage('')
 
-    if (!registeredUsers.some((user) => user.username === username.trim() && user.password === password)) {
-      setMessage('Usuario o contraseña incorrectos.')
-      return
+    try {
+      const result = await requestBackend('/api/auth/login', {
+        method: 'POST',
+        body: { username: username.trim(), password },
+      })
+      const loggedInUsername = result.user?.username || username.trim()
+      localStorage.setItem('battle-naval-current-user', loggedInUsername)
+      saveAuthToken(result.token)
+      window.location.href = '/main.html'
+    } catch (error) {
+      setMessage(error.message)
+      setIsSubmitting(false)
     }
-
-    localStorage.setItem('battle-naval-current-user', username.trim())
-    window.location.href = '/main.html'
   }
 
   return (
@@ -35,8 +44,8 @@ function LoginPage() {
             autoComplete="username"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
+            required
           />
-
           <label htmlFor="password">ingresar contraseña</label>
           <div className="password-field">
             <input
@@ -46,6 +55,7 @@ function LoginPage() {
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              required
             />
             <button
               className="btn btn-link password-toggle"
@@ -59,10 +69,13 @@ function LoginPage() {
           </div>
 
           <div className="form-actions">
-            <button className="btn btn-primary form-button" type="submit">confirmar</button>
+            <button className="btn btn-primary form-button" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'conectando…' : 'confirmar'}
+            </button>
             <button
               className="btn btn-secondary form-button"
               type="button"
+              disabled={isSubmitting}
               onClick={() => { window.location.href = '/register.html' }}
             >
               registrar usuario
