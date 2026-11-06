@@ -5,7 +5,7 @@ export function getBackendBaseUrl() {
   return configuredUrl || 'http://localhost:3000'
 }
 
-export async function requestBackend(path, { method = 'GET', body, signal } = {}) {
+export async function requestBackend(path, { method = 'GET', body, signal, allowArray = false } = {}) {
   const headers = {}
   const token = localStorage.getItem(AUTH_TOKEN_KEY)
   if (body !== undefined) headers['Content-Type'] = 'application/json'
@@ -39,7 +39,7 @@ export async function requestBackend(path, { method = 'GET', body, signal } = {}
     }
   }
 
-  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+  if (!result || typeof result !== 'object' || (!allowArray && Array.isArray(result))) {
     throw new Error('El backend devolvió una respuesta JSON no válida.')
   }
 

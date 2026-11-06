@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './style.css'
 import { useModal } from './Modal.jsx'
+import { OnlineUsers, useOnlineUsers } from './chatPresence.jsx'
 import {
   clearAuthToken,
   requestBackend,
@@ -21,6 +22,7 @@ function MainMenu() {
   const [isStartingBattle, setIsStartingBattle] = useState(false)
   const [chatError, setChatError] = useState('')
   const chatInputRef = useRef(null)
+  const { users: onlineUsers, error: onlineUsersError } = useOnlineUsers()
   const { dialog, showModal } = useModal()
 
   const checkBackendConnection = async (event) => {
@@ -171,26 +173,29 @@ function MainMenu() {
       </aside>
 
       <section className="chat-panel" aria-label="Chat">
-        <div className="chat-history" id="chat-history" aria-live="polite">
-          <h1>chat</h1>
-          {messages.map((chatMessage, index) => (
-            <p className="chat-message" key={`${index}-${chatMessage}`}>{chatMessage}</p>
-          ))}
-          {chatError && <p className="chat-error" role="alert">{chatError}</p>}
+        <OnlineUsers users={onlineUsers} error={onlineUsersError} />
+        <div className="chat-content">
+          <div className="chat-history" id="chat-history" aria-live="polite">
+            <h1>chat</h1>
+            {messages.map((chatMessage, index) => (
+              <p className="chat-message" key={`${index}-${chatMessage}`}>{chatMessage}</p>
+            ))}
+            {chatError && <p className="chat-error" role="alert">{chatError}</p>}
+          </div>
+          <form className="chat-compose" id="chat-form" onSubmit={sendMessage}>
+            <input
+              ref={chatInputRef}
+              id="chat-input"
+              type="text"
+              placeholder="escribe en el chat"
+              autoComplete="off"
+              aria-label="Escribe en el chat"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+            />
+            <button className="btn btn-primary send-button" type="submit" aria-label="Enviar mensaje" title="Enviar mensaje">&#10148;</button>
+          </form>
         </div>
-        <form className="chat-compose" id="chat-form" onSubmit={sendMessage}>
-          <input
-            ref={chatInputRef}
-            id="chat-input"
-            type="text"
-            placeholder="escribe en el chat"
-            autoComplete="off"
-            aria-label="Escribe en el chat"
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-          />
-          <button className="btn btn-primary send-button" type="submit" aria-label="Enviar mensaje" title="Enviar mensaje">&#10148;</button>
-        </form>
       </section>
       <BackendConnection
         onSubmit={checkBackendConnection}

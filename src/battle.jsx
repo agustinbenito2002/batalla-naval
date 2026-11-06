@@ -4,6 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css'
 import './battle.css'
 import { useModal } from './Modal.jsx'
 import { requestBackend } from './backendApi.js'
+import { OnlineUsers, useOnlineUsers } from './chatPresence.jsx'
 
 const BOARD_SIZE = 15
 const BOARD_CELLS = Array.from({ length: BOARD_SIZE ** 2 }, (_, index) => index)
@@ -65,6 +66,7 @@ function BattlePage() {
   const [message, setMessage] = useState('')
   const [chatError, setChatError] = useState('')
   const [gameError, setGameError] = useState('')
+  const { users: onlineUsers, error: onlineUsersError } = useOnlineUsers()
   const { dialog, showModal } = useModal()
 
   const placedShipCells = ships.flat()
@@ -443,7 +445,8 @@ function BattlePage() {
         </section>
 
         <aside className="chat-panel">
-          <div className="chat-topbar"><strong>Batalla naval</strong><span>2 usuarios</span></div>
+          <div className="chat-topbar"><strong>Batalla naval</strong><span>{onlineUsers.length} usuarios</span></div>
+          <OnlineUsers users={onlineUsers} error={onlineUsersError} />
           <div className="chat-log" aria-live="polite">
             {!gameId && <p className="game-error">No hay una partida asociada al backend.</p>}
             {messages.map((chatMessage, index) => (
