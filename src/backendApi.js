@@ -5,6 +5,25 @@ export function getBackendBaseUrl() {
   return configuredUrl || 'http://localhost:3000'
 }
 
+export function getBackendWebSocketUrl() {
+  const url = new URL(getBackendBaseUrl())
+  if (url.protocol === 'https:') {
+    url.protocol = 'wss:'
+  } else if (url.protocol === 'http:') {
+    url.protocol = 'ws:'
+  } else if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+    throw new Error('VITE_BACKEND_URL debe usar http:// o https://.')
+  }
+  url.pathname = '/ws'
+  url.search = ''
+  url.hash = ''
+  return url.toString()
+}
+
+export function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY)
+}
+
 export async function requestBackend(path, { method = 'GET', body, signal, allowArray = false } = {}) {
   const headers = {}
   const token = localStorage.getItem(AUTH_TOKEN_KEY)

@@ -1,9 +1,9 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './style.css'
 import { useModal } from './Modal.jsx'
-import { OnlineUsers, useOnlineUsers } from './chatPresence.jsx'
+import { OnlineUsers, useChatConnection } from './chatPresence.jsx'
 import {
   clearAuthToken,
   requestBackend,
@@ -13,8 +13,12 @@ const username = localStorage.getItem('battle-naval-current-user') || 'nombre us
 
 function MainMenu() {
   const [selectedButtons, setSelectedButtons] = useState([])
-  const [messages, setMessages] = useState([])
   const [message, setMessage] = useState('')
+  const [selectedUser, setSelectedUser] = useState('')
+  const [privateChatUser, setPrivateChatUser] = useState('')
+  const [privateDraft, setPrivateDraft] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [actionNotice, setActionNotice] = useState('')
   const [backendStatus, setBackendStatus] = useState({
     type: 'idle',
     message: 'Ingresa la URL de tu backend y comprueba la conexión.',
@@ -22,7 +26,19 @@ function MainMenu() {
   const [isStartingBattle, setIsStartingBattle] = useState(false)
   const [chatError, setChatError] = useState('')
   const chatInputRef = useRef(null)
-  const { users: onlineUsers, error: onlineUsersError } = useOnlineUsers()
+  const {
+    users: onlineUsers,
+    messages,
+    addChatMessage,
+    privateMessages,
+    sendPrivateMessage,
+    invitations,
+    sendChallenge,
+    respondToInvitation,
+    error: onlineUsersError,
+    historyError: chatHistoryError,
+    status: onlineUsersStatus,
+  } = useChatConnection(username)
   const { dialog, showModal } = useModal()
 
   const checkBackendConnection = async (event) => {
@@ -107,13 +123,60 @@ function MainMenu() {
         method: 'POST',
         body: { username, text: trimmedMessage },
       })
-      setMessages((current) => [...current, `${username}: ${trimmedMessage}`])
+      addChatMessage({ username, text: trimmedMessage }, true)
       setMessage('')
       chatInputRef.current?.focus()
     } catch (error) {
       setChatError(error.message)
     }
   }
+
+  const startPrivateChat = () => {
+    setPrivateChatUser(selectedUser)
+    setPrivateDraft('')
+    setActionError('')
+  }
+
+  const sendPrivate = (event) => {
+    event.preventDefault()
+    if (!privateChatUser || !privateDraft.trim()) return
+    try {
+      sendPrivateMessage(privateChatUser, privateDraft)
+      setPrivateDraft('')
+    } catch (error) {
+      setActionError(error.message)
+    }
+  }
+
+  const challengeSelectedUser = () => {
+    setActionError('')
+    setActionNotice('')
+    try {
+      sendChallenge(selectedUser)
+      setActionNotice(`Invitación enviada a ${selectedUser}.`)
+    } catch (error) {
+      setActionError(error.message)
+    }
+  }
+
+  const answerInvitation = (invitation, accepted) => {
+    try {
+      respondToInvitation(invitation, accepted)
+      setActionNotice(accepted
+        ? `Aceptaste el desafío de ${invitation.username}.`
+        : `Rechazaste el desafío de ${invitation.username}.`)
+      setActionError('')
+    } catch (error) {
+      setActionError(error.message)
+    }
+  }
+
+  useEffect(() => {
+    const lastIncomingMessage = [...privateMessages].reverse().find((chatMessage) =>
+      !chatMessage.local && chatMessage.to.toLowerCase() === username.toLowerCase(),
+    )
+    if (lastIncomingMessage) setPrivateChatUser(lastIncomingMessage.username)
+  }, [privateMessages, username])
 
   return (
     <main className="game-shell">
@@ -143,7 +206,11 @@ function MainMenu() {
             disabled={isStartingBattle}
             onClick={() => {
               toggleSelected('challenge')
-              void startBattle('challenge')
+              if (selectedUser) {
+                challengeSelectedUser()
+              } else {
+                setActionError('Selecciona un usuario conectado antes de desafiarlo.')
+              }
             }}
           >
             DESAFÍO A USUARIO
@@ -172,14 +239,79 @@ function MainMenu() {
         </button>
       </aside>
 
+      <section className={`user-actions-panel${privateChatUser ? ' has-private-chat' : ''}`} aria-live="polite">
+        {privateChatUser ? (
+          <PrivateChatDialog
+            currentUsername={username}
+            recipient={privateChatUser}
+            messages={privateMessages.filter((chatMessage) =>
+              (chatMessage.username.toLowerCase() === username.toLowerCase()
+                && chatMessage.to.toLowerCase() === privateChatUser.toLowerCase())
+              || (chatMessage.username.toLowerCase() === privateChatUser.toLowerCase()
+                && chatMessage.to.toLowerCase() === username.toLowerCase()),
+            )}
+            draft={privateDraft}
+            error={actionError}
+            onDraftChange={setPrivateDraft}
+            onSubmit={sendPrivate}
+            onClose={() => {
+              setPrivateChatUser('')
+              setActionError('')
+            }}
+          />
+        ) : selectedUser ? (
+          <>
+            <h2>{selectedUser}</h2>
+            <button className="btn btn-primary" type="button" onClick={startPrivateChat}>
+              Chat
+            </button>
+            <button className="btn btn-outline-primary" type="button" onClick={challengeSelectedUser}>
+              Desafiar
+            </button>
+            {actionNotice && <p className="user-action-notice" role="status">{actionNotice}</p>}
+            {actionError && <p className="chat-error" role="alert">{actionError}</p>}
+          </>
+        ) : (
+          <p>Selecciona un usuario conectado para ver las opciones.</p>
+        )}
+      </section>
+
       <section className="chat-panel" aria-label="Chat">
-        <OnlineUsers users={onlineUsers} error={onlineUsersError} />
+        <OnlineUsers
+          users={onlineUsers}
+          error={onlineUsersError}
+          status={onlineUsersStatus}
+          currentUsername={username}
+          selectedUser={selectedUser}
+          onSelectUser={(name) => {
+            setSelectedUser((current) => current === name ? '' : name)
+            setPrivateChatUser('')
+            setActionError('')
+            setActionNotice('')
+          }}
+        />
         <div className="chat-content">
           <div className="chat-history" id="chat-history" aria-live="polite">
             <h1>chat</h1>
-            {messages.map((chatMessage, index) => (
-              <p className="chat-message" key={`${index}-${chatMessage}`}>{chatMessage}</p>
+            {invitations.map((invitation) => (
+              <div className="chat-invitation" key={invitation.id}>
+                <p><b>{invitation.username}</b> te invita a una partida.</p>
+                <div>
+                  <button className="btn btn-success btn-sm" type="button" onClick={() => answerInvitation(invitation, true)}>
+                    Aceptar
+                  </button>
+                  <button className="btn btn-outline-secondary btn-sm" type="button" onClick={() => answerInvitation(invitation, false)}>
+                    Rechazar
+                  </button>
+                </div>
+              </div>
             ))}
+            {messages.map((chatMessage, index) => (
+              <p className="chat-message" key={chatMessage.id || `${chatMessage.username}-${chatMessage.receivedAt}-${index}`}>
+                <b>{chatMessage.username}:</b> {chatMessage.text}
+              </p>
+            ))}
+            {chatHistoryError && <p className="chat-error" role="status">{chatHistoryError}</p>}
             {chatError && <p className="chat-error" role="alert">{chatError}</p>}
           </div>
           <form className="chat-compose" id="chat-form" onSubmit={sendMessage}>
@@ -204,6 +336,45 @@ function MainMenu() {
       />
       {dialog}
     </main>
+  )
+}
+
+function PrivateChatDialog({
+  currentUsername,
+  recipient,
+  messages,
+  draft,
+  error,
+  onDraftChange,
+  onSubmit,
+  onClose,
+}) {
+  return (
+    <section className="private-chat-dialog" role="region" aria-labelledby="private-chat-title">
+      <header>
+        <h2 id="private-chat-title">{recipient}</h2>
+        <button type="button" aria-label="Cerrar chat privado" onClick={onClose}>×</button>
+      </header>
+      <p className="private-chat-temporary">Chat privado temporal</p>
+      <div className="private-chat-messages" aria-live="polite">
+        {messages.map((chatMessage, index) => (
+          <p key={chatMessage.id || `${chatMessage.receivedAt}-${index}`}>
+            <b>{chatMessage.username === currentUsername ? 'Tú' : chatMessage.username}:</b> {chatMessage.text}
+          </p>
+        ))}
+      </div>
+      <form onSubmit={onSubmit}>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          placeholder={`Mensaje para ${recipient}`}
+          aria-label={`Mensaje privado para ${recipient}`}
+        />
+        <button className="btn btn-primary" type="submit">Enviar</button>
+      </form>
+      {error && <p className="chat-error" role="alert">{error}</p>}
+    </section>
   )
 }
 

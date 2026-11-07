@@ -4,7 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css'
 import './battle.css'
 import { useModal } from './Modal.jsx'
 import { requestBackend } from './backendApi.js'
-import { OnlineUsers, useOnlineUsers } from './chatPresence.jsx'
+import { OnlineUsers, useChatConnection } from './chatPresence.jsx'
 
 const BOARD_SIZE = 15
 const BOARD_CELLS = Array.from({ length: BOARD_SIZE ** 2 }, (_, index) => index)
@@ -62,11 +62,19 @@ function BattlePage() {
   const [enemyAttackedCells, setEnemyAttackedCells] = useState(() => new Set())
   const [turnNumber, setTurnNumber] = useState(1)
   const [hasGameEnded, setHasGameEnded] = useState(false)
-  const [messages, setMessages] = useState([])
   const [message, setMessage] = useState('')
   const [chatError, setChatError] = useState('')
   const [gameError, setGameError] = useState('')
-  const { users: onlineUsers, error: onlineUsersError } = useOnlineUsers()
+  const {
+    users: onlineUsers,
+    messages,
+    addChatMessage,
+    invitations,
+    respondToInvitation,
+    error: onlineUsersError,
+    historyError: chatHistoryError,
+    status: onlineUsersStatus,
+  } = useChatConnection(username)
   const { dialog, showModal } = useModal()
 
   const placedShipCells = ships.flat()
@@ -233,10 +241,18 @@ function BattlePage() {
     try {
       await requestBackend('/api/chat/messages', {
         method: 'POST',
-        body: { username, text: trimmedMessage, gameId },
+        body: { username, text: trimmedMessage },
       })
-      setMessages((current) => [...current, trimmedMessage])
+      addChatMessage({ username, text: trimmedMessage }, true)
       setMessage('')
+    } catch (error) {
+      setChatError(error.message)
+    }
+  }
+
+  const answerInvitation = (invitation, accepted) => {
+    try {
+      respondToInvitation(invitation, accepted)
     } catch (error) {
       setChatError(error.message)
     }
@@ -446,14 +462,30 @@ function BattlePage() {
 
         <aside className="chat-panel">
           <div className="chat-topbar"><strong>Batalla naval</strong><span>{onlineUsers.length} usuarios</span></div>
-          <OnlineUsers users={onlineUsers} error={onlineUsersError} />
+          <OnlineUsers users={onlineUsers} error={onlineUsersError} status={onlineUsersStatus} />
           <div className="chat-log" aria-live="polite">
             {!gameId && <p className="game-error">No hay una partida asociada al backend.</p>}
+            {invitations.map((invitation) => (
+              <div className="chat-invitation" key={invitation.id}>
+                <p><b>{invitation.username}</b> te invita a una partida.</p>
+                <div>
+                  <button className="btn btn-success btn-sm" type="button" onClick={() => answerInvitation(invitation, true)}>
+                    Aceptar
+                  </button>
+                  <button className="btn btn-outline-secondary btn-sm" type="button" onClick={() => answerInvitation(invitation, false)}>
+                    Rechazar
+                  </button>
+                </div>
+              </div>
+            ))}
             {messages.map((chatMessage, index) => (
-              <p key={`${index}-${chatMessage}`}>
-                <b className="blue-name">{username}:</b> {chatMessage}
+              <p key={chatMessage.id || `${chatMessage.username}-${chatMessage.receivedAt}-${index}`}>
+                <b className={chatMessage.username === username ? 'blue-name' : 'orange-name'}>
+                  {chatMessage.username}:
+                </b> {chatMessage.text}
               </p>
             ))}
+            {chatHistoryError && <p className="game-error" role="status">{chatHistoryError}</p>}
             {chatError && <p className="game-error" role="alert">{chatError}</p>}
           </div>
           <form className="chat-form" onSubmit={submitMessage}>

@@ -23,7 +23,7 @@ function LoginPage() {
       })
       const loggedInUsername = result.user?.username || username.trim()
       localStorage.setItem('battle-naval-current-user', loggedInUsername)
-      saveAuthToken(result.token)
+      saveAuthToken(result.accessToken || result.token || result.session?.access_token)
       window.location.href = '/main.html'
     } catch (error) {
       setMessage(error.message)

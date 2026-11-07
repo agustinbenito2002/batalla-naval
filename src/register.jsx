@@ -70,7 +70,7 @@ function RegisterPage() {
         body: { username: cleanUsername, password },
       })
       localStorage.setItem('battle-naval-current-user', result.user?.username || cleanUsername)
-      saveAuthToken(result.token)
+      saveAuthToken(result.accessToken || result.token || result.session?.access_token)
       setRegistered(true)
     } catch (error) {
       setMessage(error.message)
