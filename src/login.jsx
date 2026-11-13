@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './login.css'
-import { requestBackend, saveAuthToken } from './backendApi.js'
+import { requestBackend, saveAuthToken, saveAuthUserId } from './backendApi.js'
 
 function LoginPage() {
   const [username, setUsername] = useState('')
@@ -24,6 +24,7 @@ function LoginPage() {
       const loggedInUsername = result.user?.username || username.trim()
       localStorage.setItem('battle-naval-current-user', loggedInUsername)
       saveAuthToken(result.accessToken || result.token || result.session?.access_token)
+      saveAuthUserId(result.user?.id || result.session?.user?.id)
       window.location.href = '/main.html'
     } catch (error) {
       setMessage(error.message)

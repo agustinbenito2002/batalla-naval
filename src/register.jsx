@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './login.css'
-import { requestBackend, saveAuthToken } from './backendApi.js'
+import { requestBackend, saveAuthToken, saveAuthUserId } from './backendApi.js'
 
 function PasswordField({ id, label, value, onChange, autoComplete, minLength }) {
   const [visible, setVisible] = useState(false)
@@ -71,6 +71,7 @@ function RegisterPage() {
       })
       localStorage.setItem('battle-naval-current-user', result.user?.username || cleanUsername)
       saveAuthToken(result.accessToken || result.token || result.session?.access_token)
+      saveAuthUserId(result.user?.id || result.session?.user?.id)
       setRegistered(true)
     } catch (error) {
       setMessage(error.message)

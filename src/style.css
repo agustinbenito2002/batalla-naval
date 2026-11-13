@@ -96,6 +96,41 @@ button { font: inherit; }
 .user-action-notice { color: #35734d !important; }
 .user-actions-panel.has-private-chat { height: min(520px, calc(100svh - 42px)); }
 
+.challenge-user-list {
+  display: grid;
+  gap: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.challenge-user-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid #b3c2ca;
+  border-radius: 4px;
+  background: #fff;
+  color: #344b5b;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.challenge-user-option:hover,
+.challenge-user-option.is-selected {
+  border-color: #579bad;
+  background: rgba(139, 207, 224, 0.55);
+}
+
+.challenge-user-option:focus-visible {
+  outline: 2px solid #2b70b1;
+  outline-offset: 1px;
+}
+
 .chat-panel {
   height: clamp(360px, calc(100svh - 42px), 900px);
   min-height: 0;

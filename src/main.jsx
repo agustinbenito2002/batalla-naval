@@ -6,15 +6,20 @@ import { useModal } from './Modal.jsx'
 import { OnlineUsers, useChatConnection } from './chatPresence.jsx'
 import {
   clearAuthToken,
+  getAuthUserId,
   requestBackend,
 } from './backendApi.js'
 
 const username = localStorage.getItem('battle-naval-current-user') || 'nombre usuario'
+const userId = getAuthUserId() || ''
 
 function MainMenu() {
   const [selectedButtons, setSelectedButtons] = useState([])
   const [message, setMessage] = useState('')
   const [selectedUser, setSelectedUser] = useState('')
+  const [challengeSelectionOpen, setChallengeSelectionOpen] = useState(false)
+  const [challengeCandidates, setChallengeCandidates] = useState([])
+  const [challengeTarget, setChallengeTarget] = useState('')
   const [privateChatUser, setPrivateChatUser] = useState('')
   const [privateDraft, setPrivateDraft] = useState('')
   const [actionError, setActionError] = useState('')
@@ -36,9 +41,10 @@ function MainMenu() {
     sendChallenge,
     respondToInvitation,
     error: onlineUsersError,
+    privateChatError,
     historyError: chatHistoryError,
     status: onlineUsersStatus,
-  } = useChatConnection(username)
+  } = useChatConnection(username, userId)
   const { dialog, showModal } = useModal()
 
   const checkBackendConnection = async (event) => {
@@ -140,6 +146,7 @@ function MainMenu() {
   const sendPrivate = (event) => {
     event.preventDefault()
     if (!privateChatUser || !privateDraft.trim()) return
+    setActionError('')
     try {
       sendPrivateMessage(privateChatUser, privateDraft)
       setPrivateDraft('')
@@ -152,11 +159,26 @@ function MainMenu() {
     setActionError('')
     setActionNotice('')
     try {
-      sendChallenge(selectedUser)
-      setActionNotice(`Invitación enviada a ${selectedUser}.`)
+      sendChallenge(challengeTarget)
+      setActionNotice(`Invitación enviada a ${challengeTarget}.`)
+      setChallengeSelectionOpen(false)
+      setChallengeTarget('')
+      setSelectedButtons((current) => current.filter((button) => button !== 'challenge'))
     } catch (error) {
       setActionError(error.message)
     }
+  }
+
+  const openChallengeSelection = () => {
+    const candidates = onlineUsers.filter((onlineUsername) =>
+      onlineUsername.toLowerCase() !== username.toLowerCase(),
+    )
+    setChallengeCandidates(candidates)
+    setChallengeTarget('')
+    setChallengeSelectionOpen(true)
+    setPrivateChatUser('')
+    setActionError('')
+    setActionNotice('')
   }
 
   const answerInvitation = (invitation, accepted) => {
@@ -205,12 +227,10 @@ function MainMenu() {
             type="button"
             disabled={isStartingBattle}
             onClick={() => {
-              toggleSelected('challenge')
-              if (selectedUser) {
-                challengeSelectedUser()
-              } else {
-                setActionError('Selecciona un usuario conectado antes de desafiarlo.')
-              }
+              setSelectedButtons((current) => current.includes('challenge')
+                ? current
+                : [...current, 'challenge'])
+              openChallengeSelection()
             }}
           >
             DESAFÍO A USUARIO
@@ -240,7 +260,53 @@ function MainMenu() {
       </aside>
 
       <section className={`user-actions-panel${privateChatUser ? ' has-private-chat' : ''}`} aria-live="polite">
-        {privateChatUser ? (
+        {challengeSelectionOpen ? (
+          <>
+            <h2>Desafiar a un usuario</h2>
+            <p>Selecciona un usuario que estaba conectado al abrir esta lista.</p>
+            {challengeCandidates.length > 0 ? (
+              <ul className="challenge-user-list" aria-label="Usuarios conectados">
+                {challengeCandidates.map((candidate) => (
+                  <li key={candidate}>
+                    <button
+                      className={`challenge-user-option${challengeTarget === candidate ? ' is-selected' : ''}`}
+                      type="button"
+                      aria-pressed={challengeTarget === candidate}
+                      onClick={() => {
+                        setChallengeTarget(candidate)
+                        setActionError('')
+                      }}
+                    >
+                      <span className="online-user-indicator" aria-hidden="true" />
+                      {candidate}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="online-users-empty">No hay otros usuarios conectados en este momento.</p>
+            )}
+            {challengeTarget && (
+              <button className="btn btn-primary" type="button" onClick={challengeSelectedUser}>
+                Desafiar a {challengeTarget}
+              </button>
+            )}
+            <button
+              className="btn btn-outline-secondary"
+              type="button"
+              onClick={() => {
+                setChallengeSelectionOpen(false)
+                setChallengeTarget('')
+                setActionError('')
+                setSelectedButtons((current) => current.filter((button) => button !== 'challenge'))
+              }}
+            >
+              Cancelar
+            </button>
+            {actionNotice && <p className="user-action-notice" role="status">{actionNotice}</p>}
+            {actionError && <p className="chat-error" role="alert">{actionError}</p>}
+          </>
+        ) : privateChatUser ? (
           <PrivateChatDialog
             currentUsername={username}
             recipient={privateChatUser}
@@ -251,7 +317,7 @@ function MainMenu() {
                 && chatMessage.to.toLowerCase() === username.toLowerCase()),
             )}
             draft={privateDraft}
-            error={actionError}
+            error={actionError || privateChatError}
             onDraftChange={setPrivateDraft}
             onSubmit={sendPrivate}
             onClose={() => {
@@ -264,9 +330,6 @@ function MainMenu() {
             <h2>{selectedUser}</h2>
             <button className="btn btn-primary" type="button" onClick={startPrivateChat}>
               Chat
-            </button>
-            <button className="btn btn-outline-primary" type="button" onClick={challengeSelectedUser}>
-              Desafiar
             </button>
             {actionNotice && <p className="user-action-notice" role="status">{actionNotice}</p>}
             {actionError && <p className="chat-error" role="alert">{actionError}</p>}

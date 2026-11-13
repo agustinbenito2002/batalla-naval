@@ -1,4 +1,5 @@
 const AUTH_TOKEN_KEY = 'battle-naval-auth-token'
+const AUTH_USER_ID_KEY = 'battle-naval-user-id'
 
 export function getBackendBaseUrl() {
   const configuredUrl = import.meta.env.VITE_BACKEND_URL?.trim()
@@ -22,6 +23,10 @@ export function getBackendWebSocketUrl() {
 
 export function getAuthToken() {
   return localStorage.getItem(AUTH_TOKEN_KEY)
+}
+
+export function getAuthUserId() {
+  return localStorage.getItem(AUTH_USER_ID_KEY)
 }
 
 export async function requestBackend(path, { method = 'GET', body, signal, allowArray = false } = {}) {
@@ -81,6 +86,15 @@ export function saveAuthToken(token) {
   }
 }
 
+export function saveAuthUserId(userId) {
+  if (typeof userId === 'string' && userId.trim()) {
+    localStorage.setItem(AUTH_USER_ID_KEY, userId.trim())
+  } else {
+    localStorage.removeItem(AUTH_USER_ID_KEY)
+  }
+}
+
 export function clearAuthToken() {
   localStorage.removeItem(AUTH_TOKEN_KEY)
+  localStorage.removeItem(AUTH_USER_ID_KEY)
 }
