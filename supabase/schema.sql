@@ -66,9 +66,11 @@ create table if not exists public.shots (
   cell_index integer not null check (cell_index between 0 and 224),
   is_hit boolean not null,
   ship_sunk boolean not null default false,
-  created_at timestamptz not null default now(),
-  unique (game_id, attacker_id, cell_index)
+  created_at timestamptz not null default now()
 );
+
+alter table public.shots
+  drop constraint if exists shots_game_id_attacker_id_cell_index_key;
 
 create table if not exists public.chat_messages (
   id bigint generated always as identity primary key,
@@ -84,6 +86,8 @@ create index if not exists games_status_created_idx
   on public.games (status, created_at);
 create index if not exists attacks_game_created_idx
   on public.attacks (game_id, created_at);
+create index if not exists attacks_center_lookup_idx
+  on public.attacks (game_id, attacker_id, center_cell);
 create index if not exists shots_game_idx
   on public.shots (game_id, created_at);
 create index if not exists chat_messages_game_created_idx
@@ -365,7 +369,9 @@ begin
         current_turn = (
           select gp.user_id
           from public.game_players gp
-          where gp.game_id = p_game_id and gp.seat = 1
+          where gp.game_id = p_game_id
+          order by pg_catalog.random()
+          limit 1
         )
     where id = p_game_id;
     v_status := 'active';
@@ -476,12 +482,12 @@ begin
   end if;
 
   if exists (
-    select 1 from public.shots s
-    where s.game_id = p_game_id
-      and s.attacker_id = v_user_id
-      and s.cell_index = any(v_targets)
+    select 1 from public.attacks a
+    where a.game_id = p_game_id
+      and a.attacker_id = v_user_id
+      and a.center_cell = v_center
   ) then
-    raise exception 'El ataque incluye casillas que ya fueron atacadas.';
+    raise exception 'Esa casilla ya fue el centro de un ataque.';
   end if;
 
   insert into public.attacks (

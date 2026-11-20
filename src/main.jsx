@@ -18,6 +18,7 @@ function MainMenu() {
   const [message, setMessage] = useState('')
   const [selectedUser, setSelectedUser] = useState('')
   const [challengeSelectionOpen, setChallengeSelectionOpen] = useState(false)
+  const [spectatorSelectionOpen, setSpectatorSelectionOpen] = useState(false)
   const [challengeCandidates, setChallengeCandidates] = useState([])
   const [challengeTarget, setChallengeTarget] = useState('')
   const [privateChatUser, setPrivateChatUser] = useState('')
@@ -40,6 +41,9 @@ function MainMenu() {
     invitations,
     sendChallenge,
     respondToInvitation,
+    spectatorMatches,
+    requestSpectatorMatches,
+    navigateAfterDisconnect,
     error: onlineUsersError,
     privateChatError,
     historyError: chatHistoryError,
@@ -173,12 +177,39 @@ function MainMenu() {
     const candidates = onlineUsers.filter((onlineUsername) =>
       onlineUsername.toLowerCase() !== username.toLowerCase(),
     )
+    setSpectatorSelectionOpen(false)
+    setSelectedButtons((current) => current.filter((button) => button !== 'spectator'))
     setChallengeCandidates(candidates)
     setChallengeTarget('')
     setChallengeSelectionOpen(true)
     setPrivateChatUser('')
     setActionError('')
     setActionNotice('')
+  }
+
+  const openSpectatorSelection = () => {
+    setChallengeSelectionOpen(false)
+    setChallengeTarget('')
+    setSelectedUser('')
+    setPrivateChatUser('')
+    setActionError('')
+    setActionNotice('')
+    setSpectatorSelectionOpen(true)
+    setSelectedButtons((current) => current.includes('spectator')
+      ? current
+      : [...current.filter((button) => button !== 'challenge'), 'spectator'])
+  }
+
+  const closeSpectatorSelection = () => {
+    setSpectatorSelectionOpen(false)
+    setActionError('')
+    setSelectedButtons((current) => current.filter((button) => button !== 'spectator'))
+  }
+
+  const watchMatch = (matchId) => {
+    setIsStartingBattle(true)
+    const params = new URLSearchParams({ matchId, mode: 'spectator' })
+    navigateAfterDisconnect(`/battle.html?${params.toString()}`)
   }
 
   const answerInvitation = (invitation, accepted) => {
@@ -199,6 +230,21 @@ function MainMenu() {
     )
     if (lastIncomingMessage) setPrivateChatUser(lastIncomingMessage.username)
   }, [privateMessages, username])
+
+  useEffect(() => {
+    if (!spectatorSelectionOpen || onlineUsersStatus !== 'Conectado') return undefined
+
+    const refreshMatches = () => {
+      try {
+        requestSpectatorMatches()
+      } catch (error) {
+        setActionError(error.message)
+      }
+    }
+    refreshMatches()
+    const intervalId = window.setInterval(refreshMatches, 5000)
+    return () => window.clearInterval(intervalId)
+  }, [onlineUsersStatus, requestSpectatorMatches, spectatorSelectionOpen])
 
   return (
     <main className="game-shell">
@@ -239,10 +285,7 @@ function MainMenu() {
             className={`btn btn-success menu-button battle-option${selectedButtons.includes('spectator') ? ' is-selected' : ''}`}
             type="button"
             disabled={isStartingBattle}
-            onClick={() => {
-              toggleSelected('spectator')
-              void startBattle('spectator')
-            }}
+            onClick={openSpectatorSelection}
           >
             MODO ESPECTADOR
           </button>
@@ -306,6 +349,41 @@ function MainMenu() {
             {actionNotice && <p className="user-action-notice" role="status">{actionNotice}</p>}
             {actionError && <p className="chat-error" role="alert">{actionError}</p>}
           </>
+        ) : spectatorSelectionOpen ? (
+          <>
+            <h2>Batallas en curso</h2>
+            <p>Selecciona una partida en curso para verla como espectador.</p>
+            {onlineUsersStatus !== 'Conectado' ? (
+              <p role="status">Conectando para consultar las partidas…</p>
+            ) : spectatorMatches === null ? (
+              <p role="status">Cargando partidas…</p>
+            ) : spectatorMatches.length > 0 ? (
+              <ul className="spectator-match-list" aria-label="Batallas públicas en curso">
+                {spectatorMatches.map((spectatorMatch) => (
+                  <li key={spectatorMatch.id}>
+                    <button
+                      className="challenge-user-option spectator-match-option"
+                      type="button"
+                      disabled={isStartingBattle}
+                      onClick={() => watchMatch(spectatorMatch.id)}
+                    >
+                      <strong>{spectatorMatch.players.map((player) => player.username).join(' vs ')}</strong>
+                      <small>
+                        Turno {spectatorMatch.game.turnNumber} · Espectadores {spectatorMatch.spectators}
+                      </small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p role="status">No hay batallas en curso en este momento.</p>
+            )}
+            {onlineUsersError && <p className="chat-error" role="alert">{onlineUsersError}</p>}
+            {actionError && <p className="chat-error" role="alert">{actionError}</p>}
+            <button className="btn btn-outline-secondary" type="button" onClick={closeSpectatorSelection}>
+              Cerrar
+            </button>
+          </>
         ) : privateChatUser ? (
           <PrivateChatDialog
             currentUsername={username}
@@ -347,6 +425,8 @@ function MainMenu() {
           currentUsername={username}
           selectedUser={selectedUser}
           onSelectUser={(name) => {
+            setSpectatorSelectionOpen(false)
+            setSelectedButtons((current) => current.filter((button) => button !== 'spectator'))
             setSelectedUser((current) => current === name ? '' : name)
             setPrivateChatUser('')
             setActionError('')

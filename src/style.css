@@ -131,6 +131,26 @@ button { font: inherit; }
   outline-offset: 1px;
 }
 
+.spectator-match-list {
+  display: grid;
+  gap: 5px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spectator-match-option {
+  display: grid;
+  gap: 3px;
+}
+
+.spectator-match-option small {
+  color: #657782;
+  font-size: 11px;
+}
+
 .chat-panel {
   height: clamp(360px, calc(100svh - 42px), 900px);
   min-height: 0;

@@ -13,7 +13,7 @@ const SHIP_TYPES = [
   { type: 'seriousGirl', name: 'Chica seria', length: 2, ability: 'Invisible al radar; esquiva bombardeos' },
   { type: 'vanguard', name: 'Vanguardia Tipo 1', length: 3, ability: 'Intercepta el primer misil que recibe' },
   { type: 'coordinator', name: 'Coordinadora Tipo 2', length: 3, ability: 'Otorga un ataque normal extra por turno' },
-  { type: 'battleship', name: 'Acorazado', length: 4, ability: 'Cada casilla necesita dos impactos' },
+  { type: 'battleship', name: 'Acorazado', length: 4, ability: 'El ataque en cruz ignora su resistencia' },
   { type: 'carrier', name: 'Portaaviones', length: 4, ability: 'Munición extra mientras permanezca intacto' },
 ]
 const LEGACY_SHIP_LENGTHS = [2, 3, 4]
@@ -21,21 +21,47 @@ const PLACEMENT_ORIENTATIONS = ['horizontal', 'vertical', 'horizontal-reverse', 
 const BOMBARDMENT_OFFSETS = Array.from({ length: 5 }, (_, row) =>
   Array.from({ length: 5 }, (_, column) => [row - 2, column - 2]),
 ).flat().filter(([row, column]) => (row + column) % 2 === 0)
-const RADAR_OFFSETS = [
-  ...Array.from({ length: 5 }, (_, index) => [index - 2, 0]),
-  [0, -1],
-  [0, 1],
-]
+const RADAR_OFFSETS = Array.from({ length: 7 }, (_, rowIndex) => {
+  const rowOffset = rowIndex - 3
+  const columnRadius = Math.abs(rowOffset) <= 1 ? 3 : 4 - Math.abs(rowOffset)
+  return Array.from({ length: columnRadius * 2 + 1 }, (_, columnIndex) => [
+    rowOffset,
+    columnIndex - columnRadius,
+  ])
+}).flat()
 const ENEMY_SHIPS = [
   [[2, 3], [2, 4], [2, 5], [2, 6]],
   [[7, 8], [7, 9], [7, 10], [7, 11]],
   [[12, 2], [12, 3], [12, 4], [12, 5]],
 ].map((ship) => ship.map(([row, column]) => row * BOARD_SIZE + column))
-const ENEMY_FLEET_CELLS = ENEMY_SHIPS.flat()
-const SPECTATOR_FLEET_CELLS = [
-  [0, 2], [0, 3], [0, 4], [2, 2], [3, 2], [4, 2], [6, 2],
-  [7, 2], [8, 2], [8, 3], [8, 4], [5, 5], [6, 5], [7, 5],
-].map(([row, column]) => row * BOARD_SIZE + column)
+
+const getSpectatorAttackMap = (actions, playerId) => {
+  const attackMap = {
+    attacked: new Set(),
+    hits: new Set(),
+    sunken: new Set(),
+    resisted: new Set(),
+    evaded: new Set(),
+  }
+  for (const event of actions) {
+    if (event.playerId !== playerId || event.action?.type !== 'attack'
+      || !Array.isArray(event.action.results)) continue
+    for (const result of event.action.results) {
+      attackMap.attacked.add(result.cell)
+      if (result.result === 'hit') {
+        attackMap.hits.add(result.cell)
+        attackMap.evaded.delete(result.cell)
+      }
+      if (result.result === 'evaded') attackMap.evaded.add(result.cell)
+      if (result.resisted) attackMap.resisted.add(result.cell)
+      if (result.cellSunk) attackMap.resisted.delete(result.cell)
+      if (result.shipSunk && Array.isArray(result.shipCells)) {
+        result.shipCells.forEach((cell) => attackMap.sunken.add(cell))
+      }
+    }
+  }
+  return attackMap
+}
 
 const getAttackOffsets = (attackType) => {
   if (attackType === 'cross') return [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]
@@ -55,6 +81,10 @@ const getAffectedCells = (center, offsets) => {
       : [row * BOARD_SIZE + column]
   })
 }
+
+const isPreviouslyUsedAttackCenter = (cell, attackCenters, retryableAttackCenters) => (
+  attackCenters.has(cell) && !retryableAttackCenters.has(cell)
+)
 
 function BattlePage() {
   const searchParams = new URLSearchParams(window.location.search)
@@ -77,13 +107,19 @@ function BattlePage() {
   const [playerHits, setPlayerHits] = useState(() => new Set())
   const [enemySunkenCells, setEnemySunkenCells] = useState(() => new Set())
   const [playerSunkenCells, setPlayerSunkenCells] = useState(() => new Set())
+  const [enemyResistedCells, setEnemyResistedCells] = useState(() => new Set())
+  const [playerResistedCells, setPlayerResistedCells] = useState(() => new Set())
+  const [enemyEvadedCells, setEnemyEvadedCells] = useState(() => new Set())
   const [radarResults, setRadarResults] = useState([])
   const [attackedEnemyCells, setAttackedEnemyCells] = useState(() => new Set())
-  const [enemyAttackedCells, setEnemyAttackedCells] = useState(() => new Set())
+  const [attackCenters, setAttackCenters] = useState(() => new Set())
+  const [retryableAttackCenters, setRetryableAttackCenters] = useState(() => new Set())
+  const [enemyAttackCenters, setEnemyAttackCenters] = useState(() => new Set())
   const [turnNumber, setTurnNumber] = useState(1)
   const [isSendingFleet, setIsSendingFleet] = useState(false)
   const [isSendingAttack, setIsSendingAttack] = useState(false)
   const [hasGameEnded, setHasGameEnded] = useState(false)
+  const [gameResultStatus, setGameResultStatus] = useState('')
   const [message, setMessage] = useState('')
   const [chatError, setChatError] = useState('')
   const [gameError, setGameError] = useState('')
@@ -114,9 +150,38 @@ function BattlePage() {
   const selectedOffsets = getAttackOffsets(selectedAttack)
   const rival = match?.players?.find((player) => player.id !== userId)
   const matchGame = match?.game
+  const winnerUsername = match?.players?.find((player) => player.id === matchGame?.winnerId)?.username
+  const spectatorAttackMaps = isSpectatorMode
+    ? (match?.players || []).slice(0, 2).map((player) => ({
+      player,
+      ...getSpectatorAttackMap(matchActions, player.id),
+    }))
+    : []
   const isFleetReady = isShipPlaced || matchGame?.readyPlayerIds?.includes(userId)
   const isYourTurn = matchGame?.currentTurnId === userId
   const hasAvailableAction = matchGame?.primaryActionAvailable || matchGame?.extraNormalAvailable
+  const finishedMatchStatus = isSpectatorMode
+    ? winnerUsername ? `Ganador: ${winnerUsername}` : 'Partida finalizada'
+    : matchGame?.winnerId
+      ? matchGame.winnerId === userId ? '¡Victoria!' : 'Derrota'
+      : 'Partida finalizada'
+  const turnStatus = gameResultStatus || (
+    isSpectatorMode
+      ? matchGame?.phase === 'active'
+        ? `Turno de ${match?.players?.find((player) => player.id === matchGame.currentTurnId)?.username || 'un jugador'}`
+        : matchGame?.phase === 'finished'
+          ? finishedMatchStatus
+          : 'Esperando flotas'
+      : isRealtimeMatch
+        ? matchGame?.phase === 'active'
+          ? !matchGame.currentTurnId
+            ? 'Preparando el turno…'
+            : isYourTurn ? 'Tu turno' : 'Turno enemigo'
+          : matchGame?.phase === 'finished'
+            ? finishedMatchStatus
+            : isFleetReady ? 'Esperando flota enemiga' : 'Coloca tu flota'
+        : isShipPlaced ? 'Tu turno' : 'Coloca tu flota'
+  )
   const selectedAmmo = matchGame?.ammo?.[selectedAttack]
   const canAttack = isRealtimeMatch
     ? isFleetReady
@@ -171,9 +236,10 @@ function BattlePage() {
     setPlacementMessage('')
   }
 
-  const finishGame = async (resultMessage) => {
+  const finishGame = async (resultMessage, statusMessage) => {
     if (hasGameEnded) return
     setHasGameEnded(true)
+    if (statusMessage) setGameResultStatus(statusMessage)
     const shouldLeave = await showModal(resultMessage, {
       title: 'Fin de la partida',
       confirmText: 'Salir',
@@ -268,6 +334,11 @@ function BattlePage() {
       setPlacementMessage('Primero completa tu flota de 4 barcos antes de disparar.')
       return
     }
+    if (selectedAttack !== 'radar'
+        && isPreviouslyUsedAttackCenter(cell, attackCenters, retryableAttackCenters)) {
+      setGameError('Esa casilla ya fue el centro de un ataque.')
+      return
+    }
 
     setGameError('')
     if (isRealtimeMatch) {
@@ -298,6 +369,7 @@ function BattlePage() {
     }
 
     const targets = getAffectedCells(cell, selectedOffsets)
+    setAttackCenters((current) => new Set(current).add(cell))
     const newHits = new Set(enemyHits)
     const newAttackedCells = new Set(attackedEnemyCells)
     targets.forEach((target) => {
@@ -308,28 +380,32 @@ function BattlePage() {
     setAttackedEnemyCells(newAttackedCells)
 
     if (ENEMY_FLEET_CELLS.every((target) => newHits.has(target))) {
-      await finishGame('¡Has ganado la partida! Destruiste el barco enemigo. ¿Quieres salir de la partida?')
+      await finishGame(
+        '¡Has ganado la partida! Destruiste el barco enemigo. ¿Quieres salir de la partida?',
+        '¡Victoria!',
+      )
       return
     }
 
-    const availableTargets = BOARD_CELLS.filter((target) => !enemyAttackedCells.has(target))
+    const availableTargets = BOARD_CELLS.filter((target) => !enemyAttackCenters.has(target))
     if (availableTargets.length === 0) return
 
     const enemyTarget = availableTargets[Math.floor(Math.random() * availableTargets.length)]
-    const newEnemyAttackedCells = new Set(enemyAttackedCells)
+    setEnemyAttackCenters((current) => new Set(current).add(enemyTarget))
     const newPlayerHits = new Set(playerHits)
     getAffectedCells(enemyTarget, BOMBARDMENT_OFFSETS).forEach((target) => {
-      newEnemyAttackedCells.add(target)
       if (placedShipCells.includes(target)) newPlayerHits.add(target)
     })
-    setEnemyAttackedCells(newEnemyAttackedCells)
     setPlayerHits(newPlayerHits)
     setTurnNumber((turn) => turn + 1)
 
     const fleetDestroyed = ships.length > 0
       && ships.every((ship) => ship.cells.every((target) => newPlayerHits.has(target)))
     if (fleetDestroyed) {
-      await finishGame('¡Has perdido la partida! Tu flota ha sido destruida. ¿Quieres salir de la partida?')
+      await finishGame(
+        '¡Has perdido la partida! Tu flota ha sido destruida. ¿Quieres salir de la partida?',
+        'Derrota',
+      )
     }
   }
 
@@ -399,6 +475,22 @@ function BattlePage() {
     }
 
     if (newAttacks.length) {
+      setAttackCenters((current) => {
+        const next = new Set(current)
+        newAttacks.filter((event) => event.playerId === userId
+          && Number.isInteger(event.action.cell))
+          .forEach((event) => next.add(event.action.cell))
+        return next
+      })
+      setRetryableAttackCenters((current) => {
+        const next = new Set(current)
+        for (const result of newAttacks.filter((event) => event.playerId === userId)
+          .flatMap((event) => event.action.results)) {
+          if (result.result === 'evaded' || result.resisted) next.add(result.cell)
+          if (result.cellSunk) next.delete(result.cell)
+        }
+        return next
+      })
       setAttackedEnemyCells((current) => {
         const next = new Set(current)
         newAttacks.filter((event) => event.playerId === userId)
@@ -418,15 +510,27 @@ function BattlePage() {
         const next = new Set(current)
         newAttacks.filter((event) => event.playerId === userId)
           .flatMap((event) => event.action.results)
-          .filter((result) => result.cellSunk)
-          .forEach((result) => next.add(result.cell))
+          .filter((result) => result.shipSunk && Array.isArray(result.shipCells))
+          .flatMap((result) => result.shipCells)
+          .forEach((cell) => next.add(cell))
         return next
       })
-      setEnemyAttackedCells((current) => {
+      setEnemyResistedCells((current) => {
         const next = new Set(current)
-        newAttacks.filter((event) => event.playerId !== userId)
-          .flatMap((event) => event.action.results)
-          .forEach((result) => next.add(result.cell))
+        for (const result of newAttacks.filter((event) => event.playerId === userId)
+          .flatMap((event) => event.action.results)) {
+          if (result.resisted) next.add(result.cell)
+          if (result.cellSunk) next.delete(result.cell)
+        }
+        return next
+      })
+      setEnemyEvadedCells((current) => {
+        const next = new Set(current)
+        for (const result of newAttacks.filter((event) => event.playerId === userId)
+          .flatMap((event) => event.action.results)) {
+          if (result.result === 'evaded') next.add(result.cell)
+          if (result.result === 'hit') next.delete(result.cell)
+        }
         return next
       })
       setPlayerHits((current) => {
@@ -441,23 +545,53 @@ function BattlePage() {
         const next = new Set(current)
         newAttacks.filter((event) => event.playerId !== userId)
           .flatMap((event) => event.action.results)
-          .filter((result) => result.cellSunk)
-          .forEach((result) => next.add(result.cell))
+          .filter((result) => result.shipSunk && Array.isArray(result.shipCells))
+          .flatMap((result) => result.shipCells)
+          .forEach((cell) => next.add(cell))
+        return next
+      })
+      setPlayerResistedCells((current) => {
+        const next = new Set(current)
+        for (const result of newAttacks.filter((event) => event.playerId !== userId)
+          .flatMap((event) => event.action.results)) {
+          if (result.resisted) next.add(result.cell)
+          if (result.cellSunk) next.delete(result.cell)
+        }
         return next
       })
     }
 
     if (winnerId && !hasGameEnded) {
-      void finishGame(winnerId === userId
-        ? '¡Ganaste! Destruiste toda la flota rival.'
-        : 'La flota rival destruyó todos tus barcos.')
+      const winner = match?.players?.find((player) => player.id === winnerId)?.username || 'Un jugador'
+      const resultMessage = isSpectatorMode
+        ? `${winner} ganó la partida.`
+        : winnerId === userId
+          ? '¡Ganaste! Destruiste toda la flota rival.'
+          : 'La flota rival destruyó todos tus barcos.'
+      void finishGame(resultMessage)
     }
   }, [
     finishGame,
     hasGameEnded,
     isRealtimeMatch,
+    isSpectatorMode,
+    match,
     matchActions,
     userId,
+  ])
+
+  useEffect(() => {
+    if (isRealtimeMatch
+        && isYourTurn
+        && matchGame?.primaryActionAvailable === false
+        && matchGame.extraNormalAvailable) {
+      setSelectedAttack('normal')
+    }
+  }, [
+    isRealtimeMatch,
+    isYourTurn,
+    matchGame?.extraNormalAvailable,
+    matchGame?.primaryActionAvailable,
   ])
 
   useEffect(() => {
@@ -565,10 +699,22 @@ function BattlePage() {
           )}
           {gameError && <p className="game-error" role="alert">{gameError}</p>}
 
+          <div
+            className={`turn-status-card${isRealtimeMatch && matchGame?.phase === 'active'
+              ? isYourTurn ? ' is-your-turn' : ' is-enemy-turn'
+              : ''}`}
+            role="status"
+            aria-live="polite"
+          >
+            {turnStatus}
+          </div>
+
           <div className="boards">
             <section className="board-card">
               <div className="board-title">
-                <span>{isSpectatorMode ? 'Jugador 1' : 'Estado actual del mapa del jugador'}</span>
+                <span>{isSpectatorMode
+                  ? `Mapa de ataque de ${spectatorAttackMaps[0]?.player.username || 'Jugador 1'}`
+                  : 'Estado actual del mapa del jugador'}</span>
                 <b>⚓</b>
               </div>
               <div className="grid-labels"><span />{COLUMN_LABELS.map((label) => <span key={label}>{label}</span>)}</div>
@@ -576,24 +722,38 @@ function BattlePage() {
                 <div className="row-labels">
                   {COLUMN_LABELS.map((_, index) => <span key={index}>{index + 1}</span>)}
                 </div>
-                <div className="sea-grid fleet-grid">
+                <div className={`sea-grid ${isSpectatorMode ? 'enemy-state-grid' : 'fleet-grid'}`}>
                   {BOARD_CELLS.map((cell) => {
-                    const hasShip = isSpectatorMode
-                      ? SPECTATOR_FLEET_CELLS.includes(cell)
-                      : placedShipCells.includes(cell)
-                    const isHit = playerHits.has(cell) && hasShip
+                    const spectatorAttackMap = spectatorAttackMaps[0]
+                    const hasShip = !isSpectatorMode && placedShipCells.includes(cell)
+                    const isResisted = isSpectatorMode
+                      ? spectatorAttackMap?.resisted.has(cell)
+                      : playerResistedCells.has(cell)
+                    const isSunken = isSpectatorMode
+                      ? spectatorAttackMap?.sunken.has(cell)
+                      : playerSunkenCells.has(cell)
+                    const isHit = isSpectatorMode
+                      ? spectatorAttackMap?.hits.has(cell) && !isResisted && !isSunken
+                      : playerHits.has(cell) && hasShip && !isResisted && !isSunken
                     return (
                       <button
                         className={[
                           'sea-cell',
+                          isSpectatorMode && 'unknown-cell',
                           hasShip && 'ship-cell',
                           !isSpectatorMode && shipPreview.includes(cell) && 'ship-preview',
-                          isHit && 'hit-cell',
-                          playerSunkenCells.has(cell) && 'sunken-cell',
+                          isSpectatorMode && spectatorAttackMap?.attacked.has(cell) && 'attacked-cell',
+                          isSpectatorMode && spectatorAttackMap?.evaded.has(cell) && 'evaded-cell',
+                          isSpectatorMode && isHit && 'enemy-hit-cell',
+                          !isSpectatorMode && isHit && 'hit-cell',
+                          isResisted && 'resisted-cell',
+                          isSunken && 'sunken-cell',
                         ].filter(Boolean).join(' ')}
                         type="button"
                         key={cell}
-                        aria-label={`Casilla ${cell + 1} de tu flota`}
+                        aria-label={isSpectatorMode
+                          ? `Casilla ${cell + 1} del mapa de ataque de ${spectatorAttackMap?.player.username || 'Jugador 1'}`
+                          : `Casilla ${cell + 1} de tu flota`}
                         disabled={isSpectatorMode || isFleetReady || isSendingFleet}
                         onMouseEnter={() => !isSpectatorMode && !isFleetReady && !isSendingFleet && previewShipAt(cell)}
                         onMouseLeave={() => setShipPreview([])}
@@ -611,12 +771,18 @@ function BattlePage() {
                   })}
                 </div>
               </div>
-              <p className="board-hint">{isSpectatorMode ? 'Flota del jugador 1' : 'Tu flota está lista para el combate'}</p>
+              <p className="board-hint">
+                {isSpectatorMode
+                  ? `Ataques realizados por ${spectatorAttackMaps[0]?.player.username || 'Jugador 1'}`
+                  : 'Tu flota está lista para el combate'}
+              </p>
             </section>
 
             <section className="board-card">
               <div className="board-title">
-                <span>{isSpectatorMode ? 'Jugador 2' : 'Mapa enemigo'}</span>
+                <span>{isSpectatorMode
+                  ? `Mapa de ataque de ${spectatorAttackMaps[1]?.player.username || 'Jugador 2'}`
+                  : 'Mapa enemigo'}</span>
                 <b>?</b>
               </div>
               <div className="grid-labels"><span />{COLUMN_LABELS.map((label) => <span key={label}>{label}</span>)}</div>
@@ -626,27 +792,48 @@ function BattlePage() {
                 </div>
                 <div className="sea-grid enemy-state-grid">
                   {BOARD_CELLS.map((cell) => {
-                    const isHit = enemyHits.has(cell)
+                    const spectatorAttackMap = spectatorAttackMaps[1]
+                    const isResisted = isSpectatorMode
+                      ? spectatorAttackMap?.resisted.has(cell)
+                      : enemyResistedCells.has(cell) && !enemySunkenCells.has(cell)
+                    const isSunken = isSpectatorMode
+                      ? spectatorAttackMap?.sunken.has(cell)
+                      : enemySunkenCells.has(cell)
+                    const isHit = isSpectatorMode
+                      ? spectatorAttackMap?.hits.has(cell) && !isResisted && !isSunken
+                      : enemyHits.has(cell)
                     const sunkenShip = !isRealtimeMatch && ENEMY_SHIPS.some((ship) =>
                       ship.includes(cell) && ship.every((shipCell) => enemyHits.has(shipCell)))
-                    const isSpectatorShip = isSpectatorMode && ENEMY_FLEET_CELLS.includes(cell)
                     const radarResult = radarResults.find((result) => result.cell === cell)
+                    const isAttacked = isSpectatorMode
+                      ? spectatorAttackMap?.attacked.has(cell)
+                      : attackedEnemyCells.has(cell)
+                    const isEvaded = isSpectatorMode
+                      ? spectatorAttackMap?.evaded.has(cell)
+                      : enemyEvadedCells.has(cell)
+                    const isUsedAttackCenter = selectedAttack !== 'radar'
+                      && isPreviouslyUsedAttackCenter(cell, attackCenters, retryableAttackCenters)
                     return (
                       <button
                         className={[
                           'sea-cell',
                           'unknown-cell',
-                          (isSpectatorShip || sunkenShip) && 'ship-cell',
-                          attackedEnemyCells.has(cell) && 'attacked-cell',
-                          isHit && !sunkenShip && 'enemy-hit-cell',
-                          (sunkenShip || enemySunkenCells.has(cell)) && 'sunken-cell',
+                          !isSpectatorMode && sunkenShip && 'ship-cell',
+                          isAttacked && 'attacked-cell',
+                          isEvaded && 'evaded-cell',
+                          isHit && !isResisted && !sunkenShip && (isSpectatorMode || !enemySunkenCells.has(cell))
+                            && 'enemy-hit-cell',
+                          isResisted && 'resisted-cell',
+                          (sunkenShip || isSunken) && 'sunken-cell',
                           attackPreview.includes(cell) && 'attack-preview',
                           radarResult && (radarResult.detected ? 'radar-detected' : 'radar-clear'),
                         ].filter(Boolean).join(' ')}
                         type="button"
                         key={cell}
-                        aria-label={`${isSpectatorMode ? 'Casilla' : 'Atacar casilla'} ${cell + 1} del jugador 2${radarResult ? (radarResult.detected ? ', radar detectó nave' : ', radar sin detección') : ''}`}
-                        disabled={isSpectatorMode || !canAttack || hasGameEnded}
+                        aria-label={isSpectatorMode
+                          ? `Casilla ${cell + 1} del mapa de ataque de ${spectatorAttackMap?.player.username || 'Jugador 2'}`
+                          : `Atacar casilla ${cell + 1} del jugador 2${radarResult ? (radarResult.detected ? ', radar detectó nave' : ', radar sin detección') : ''}`}
+                        disabled={isSpectatorMode || !canAttack || hasGameEnded || isUsedAttackCenter}
                         onMouseEnter={() => setAttackPreview(getAffectedCells(cell, selectedOffsets))}
                         onMouseLeave={() => setAttackPreview([])}
                         onClick={() => attack(cell)}
@@ -656,7 +843,9 @@ function BattlePage() {
                 </div>
               </div>
               <p className="board-hint">
-                {isSpectatorMode ? 'Flota del jugador 2' : 'Selecciona una casilla para atacar; los impactos se muestran aquí'}
+                {isSpectatorMode
+                  ? `Ataques realizados por ${spectatorAttackMaps[1]?.player.username || 'Jugador 2'}`
+                  : 'Selecciona una casilla para atacar; los impactos se muestran aquí'}
               </p>
             </section>
           </div>
@@ -711,7 +900,7 @@ function BattlePage() {
                     onClick={() => setSelectedAttack('radar')}
                   >
                     <span className="ammo-icon">⌖</span>
-                    <span><strong>Radar ({matchGame?.ammo?.radar ?? 0})</strong><small>Escanea una cruz 5×3; consume el turno</small></span>
+                    <span><strong>Radar ({matchGame?.ammo?.radar ?? 0})</strong><small>Escanea 37 casillas en el patrón 7×7; consume el turno</small></span>
                   </button>
                 )}
               </div>

@@ -6,8 +6,9 @@ import {
   requestBackend,
 } from './backendApi.js'
 
-const AUTHENTICATION_TIMEOUT = 25000
+const AUTHENTICATION_TIMEOUT = 60000
 const CHAT_HISTORY_REFRESH_INTERVAL = 5000
+const MATCH_NAVIGATION_CLOSE_REASON = 'Navegando a la partida'
 
 function normalizeChatMessage(event) {
   const root = event.payload && typeof event.payload === 'object'
@@ -128,6 +129,7 @@ export function useChatConnection(
   const [privateChatError, setPrivateChatError] = useState('')
   const [invitations, setInvitations] = useState([])
   const [match, setMatch] = useState(null)
+  const [spectatorMatches, setSpectatorMatches] = useState(null)
   const [matchActions, setMatchActions] = useState([])
   const [radarResults, setRadarResults] = useState([])
   const [matchError, setMatchError] = useState('')
@@ -260,6 +262,30 @@ export function useChatConnection(
     setMatchError('')
     sendSocketEvent({ type: 'match:action', matchId, action })
   }, [sendSocketEvent])
+
+  const requestSpectatorMatches = useCallback(() => {
+    sendSocketEvent({ type: 'match:spectator:list' })
+  }, [sendSocketEvent])
+
+  const navigateAfterDisconnect = useCallback((destination) => {
+    const socket = socketRef.current
+    if (!socket || socket.readyState === WebSocket.CLOSED) {
+      window.location.href = destination
+      return
+    }
+
+    let navigationTimeout
+    const navigate = () => {
+      window.clearTimeout(navigationTimeout)
+      socket.removeEventListener('close', navigate)
+      window.location.href = destination
+    }
+    socket.addEventListener('close', navigate, { once: true })
+    navigationTimeout = window.setTimeout(navigate, 1000)
+    if (socket.readyState < WebSocket.CLOSING) {
+      socket.close(1000, MATCH_NAVIGATION_CLOSE_REASON)
+    }
+  }, [])
 
   const leaveMatch = useCallback((matchId) => {
     if (!matchId) return
@@ -557,6 +583,11 @@ export function useChatConnection(
           return
         }
 
+        if (event.type === 'match:spectator:list') {
+          setSpectatorMatches(Array.isArray(event.matches) ? event.matches : [])
+          return
+        }
+
         if (event.type === 'match:ended') {
           setMatch((current) => current ? { ...current, status: 'ended' } : current)
           setError('La partida terminó porque uno de los jugadores salió.')
@@ -589,7 +620,8 @@ export function useChatConnection(
         if (event.type === 'game:challenge:accepted') {
           const matchId = event.matchId || event.gameId
           if (typeof matchId === 'string' && matchId) {
-            window.location.href = `/battle.html?${new URLSearchParams({ matchId })}`
+            const destination = `/battle.html?${new URLSearchParams({ matchId })}`
+            navigateAfterDisconnect(destination)
           }
           return
         }
@@ -645,11 +677,19 @@ export function useChatConnection(
         authenticatedRef.current = false
         if (socketRef.current === socket) socketRef.current = null
         window.clearTimeout(authenticationTimer)
+        if (closeEvent.reason === MATCH_NAVIGATION_CLOSE_REASON) {
+          setStatus('Desconectado')
+          setError('')
+          return
+        }
         setStatus(socketAuthErrorRef.current ? 'Error de autenticación' : 'Desconectado')
         const reason = closeEvent.reason ? ` Motivo: ${closeEvent.reason}` : ''
+        const errorMessage = closeEvent.code === 4001 && /sesión reemplazada/i.test(closeEvent.reason)
+          ? 'El servidor reemplazó esta conexión por otra sesión de la misma cuenta. Cierra las otras pestañas o dispositivos que la estén usando y vuelve a entrar.'
+          : `El servidor cerró la conexión WebSocket (código ${closeEvent.code}).${reason} Revisa Network → WS.`
         setError(socketAuthErrorRef.current
           ? `${socketAuthErrorRef.current} (código WebSocket ${closeEvent.code}).`
-          : `El servidor cerró la conexión WebSocket (código ${closeEvent.code}).${reason} Revisa Network → WS.`)
+          : errorMessage)
       })
     } catch (connectionError) {
       authenticatedRef.current = false
@@ -670,6 +710,7 @@ export function useChatConnection(
     authenticatedUserId,
     initialMatchId,
     initialMatchRole,
+    navigateAfterDisconnect,
     replaceMatchChatHistory,
     username,
   ])
@@ -684,10 +725,13 @@ export function useChatConnection(
     sendPrivateMessage,
     invitations,
     match,
+    spectatorMatches,
     matchActions,
     radarResults,
     matchError,
     sendMatchAction,
+    requestSpectatorMatches,
+    navigateAfterDisconnect,
     leaveMatch,
     sendMatchChat,
     sendChallenge,
