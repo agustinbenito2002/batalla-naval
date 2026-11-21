@@ -9,6 +9,8 @@ import { useChatConnection } from './chatPresence.jsx'
 const BOARD_SIZE = 15
 const BOARD_CELLS = Array.from({ length: BOARD_SIZE ** 2 }, (_, index) => index)
 const COLUMN_LABELS = 'ABCDEFGHIJKLMNO'.split('')
+const FLEET_POINTS = 12
+const MAX_STACKED_EFFECTS = 2
 const SHIP_TYPES = [
   { type: 'seriousGirl', name: 'Chica seria', length: 2, ability: 'Invisible al radar; esquiva bombardeos' },
   { type: 'vanguard', name: 'Vanguardia Tipo 1', length: 3, ability: 'Intercepta el primer misil que recibe' },
@@ -95,6 +97,10 @@ function BattlePage() {
   const username = localStorage.getItem('battle-naval-current-user') || 'Capitán jugador'
   const userId = getAuthUserId() || ''
   const [ships, setShips] = useState([])
+  const [purchasedShipCounts, setPurchasedShipCounts] = useState(() =>
+    Object.fromEntries(SHIP_TYPES.map((ship) => [ship.type, 0])),
+  )
+  const [isBuyingFleet, setIsBuyingFleet] = useState(true)
   const [selectedShipType, setSelectedShipType] = useState('seriousGirl')
   const [selectedShipLength, setSelectedShipLength] = useState(2)
   const [orientationIndex, setOrientationIndex] = useState(0)
@@ -147,6 +153,13 @@ function BattlePage() {
 
   const placedShipCells = ships.flatMap((ship) => ship.cells)
   const shipCount = ships.length
+  const purchasedShipCount = Object.values(purchasedShipCounts).reduce((total, count) => total + count, 0)
+  const purchasedFleetPoints = SHIP_TYPES.reduce(
+    (total, ship) => total + purchasedShipCounts[ship.type] * ship.length,
+    0,
+  )
+  const remainingFleetPoints = FLEET_POINTS - purchasedFleetPoints
+  const requiredShipCount = isRealtimeMatch ? purchasedShipCount : 4
   const selectedOffsets = getAttackOffsets(selectedAttack)
   const rival = match?.players?.find((player) => player.id !== userId)
   const matchGame = match?.game
@@ -222,6 +235,38 @@ function BattlePage() {
     )
   }
 
+  const buyShip = (type) => {
+    const ship = SHIP_TYPES.find((option) => option.type === type)
+    if (!ship) return
+    setPurchasedShipCounts((current) => {
+      const currentCount = current[type]
+      const currentPoints = SHIP_TYPES.reduce(
+        (total, option) => total + current[option.type] * option.length,
+        0,
+      )
+      if (currentPoints + ship.length > FLEET_POINTS) {
+        return current
+      }
+      return { ...current, [type]: currentCount + 1 }
+    })
+  }
+
+  const refundShip = (type) => {
+    setPurchasedShipCounts((current) => (
+      current[type] > 0 ? { ...current, [type]: current[type] - 1 } : current
+    ))
+  }
+
+  const beginFleetPlacement = () => {
+    const firstPurchasedShip = SHIP_TYPES.find((ship) => purchasedShipCounts[ship.type] > 0)
+    if (!firstPurchasedShip) return
+    setSelectedShipType(firstPurchasedShip.type)
+    setSelectedShipLength(firstPurchasedShip.length)
+    setIsBuyingFleet(false)
+    setShipPreview([])
+    setPlacementMessage('')
+  }
+
   const undoLastShip = () => {
     if (isShipPlaced || ships.length === 0) return
     const lastShip = ships[ships.length - 1]
@@ -250,11 +295,13 @@ function BattlePage() {
 
   const placeShip = async (cell) => {
     if (isSpectatorMode || isFleetReady || isSendingFleet) return
-    if (isRealtimeMatch && ships.some((ship) => ship.type === selectedShipType)) {
-      setPlacementMessage('Esta nave ya está colocada. Selecciona otra clase.')
-      return
+    if (isRealtimeMatch) {
+      const placedTypeCount = ships.filter((ship) => ship.type === selectedShipType).length
+      if (isBuyingFleet || placedTypeCount >= purchasedShipCounts[selectedShipType]) {
+        setPlacementMessage('Compra esta nave antes de colocarla o selecciona otra comprada.')
+        return
+      }
     }
-    const requiredShipCount = isRealtimeMatch ? SHIP_TYPES.length : 4
     if (shipCount >= requiredShipCount) {
       await showModal(`Máximo de ${requiredShipCount} barcos alcanzado. Deshaz el último barco para cambiar tu flota.`, {
         title: 'Límite de barcos',
@@ -286,7 +333,7 @@ function BattlePage() {
     setShips(nextShips)
     if (isRealtimeMatch) {
       const nextShip = SHIP_TYPES.find((ship) =>
-        !nextShips.some((placedShip) => placedShip.type === ship.type))
+        purchasedShipCounts[ship.type] > nextShips.filter((placedShip) => placedShip.type === ship.type).length)
       if (nextShip) {
         setSelectedShipType(nextShip.type)
         setSelectedShipLength(nextShip.length)
@@ -303,6 +350,7 @@ function BattlePage() {
       })
       if (!confirmed) {
         setShips((current) => current.slice(0, -1))
+        if (isRealtimeMatch) setSelectedShipType(selectedShipType)
         setSelectedShipLength(cells.length)
         return
       }
@@ -642,59 +690,127 @@ function BattlePage() {
 
           {!isSpectatorMode && (
             <div className="placement-toolbar">
-              <div className="placement-options">
-                {(isRealtimeMatch ? SHIP_TYPES : LEGACY_SHIP_LENGTHS).map((shipOption) => {
-                  const type = isRealtimeMatch ? shipOption.type : null
-                  const length = isRealtimeMatch ? shipOption.length : shipOption
-                  const name = isRealtimeMatch ? shipOption.name : `${length} casillas`
-                  const alreadyPlaced = isRealtimeMatch && ships.some((ship) => ship.type === type)
-                  const selected = isRealtimeMatch
-                    ? selectedShipType === type
-                    : selectedShipLength === length
-                  return (
-                  <button
-                    className={`btn btn-outline-primary ship-size-button${selected ? ' selected' : ''}`}
-                    data-length={length}
-                    type="button"
-                    key={type || length}
-                    title={isRealtimeMatch ? shipOption.ability : name}
-                    disabled={isFleetReady || isSendingFleet
-                      || shipCount >= (isRealtimeMatch ? SHIP_TYPES.length : 4)
-                      || alreadyPlaced}
-                    onClick={() => {
-                      setSelectedShipLength(length)
-                      if (isRealtimeMatch) setSelectedShipType(type)
-                      setShipPreview([])
-                    }}
-                  >
-                    {isRealtimeMatch ? `${name} (${length})` : name}
-                  </button>
-                  )
-                })}
-                <button
-                  className="btn btn-outline-danger"
-                  type="button"
-                  disabled={isFleetReady || isSendingFleet || shipCount === 0}
-                  onClick={undoLastShip}
-                >
-                  Deshacer último barco
-                </button>
-              </div>
-              <span id="placement-status">
-                {isFleetReady
-                  ? isRealtimeMatch && matchGame?.phase !== 'active'
-                    ? 'Tu flota está lista. Espera a que tu rival confirme la suya.'
-                    : isRealtimeMatch && !isYourTurn
-                      ? `Tu flota está lista. Espera el turno de ${rival?.username || 'tu rival'}.`
-                      : 'Tu flota está completa. Puedes lanzar tus misiles.'
-                  : isSendingFleet
-                    ? 'Enviando tu flota al servidor…'
-                    : placementMessage || (shipCount >= (isRealtimeMatch ? SHIP_TYPES.length : 4)
-                    ? 'Flota completa. Deshaz la última nave para cambiarla o confirma para continuar.'
-                    : `Naves colocadas: ${shipCount}/${isRealtimeMatch ? SHIP_TYPES.length : 4}. ${isRealtimeMatch
-                      ? `Seleccionada: ${SHIP_TYPES.find((ship) => ship.type === selectedShipType).name}.`
-                      : `Longitud actual: ${selectedShipLength} casillas.`}`)}
-              </span>
+              {isRealtimeMatch && isBuyingFleet && !isFleetReady ? (
+                <div className="fleet-purchase-panel">
+                  <div className="fleet-purchase-list">
+                    {SHIP_TYPES.map((ship) => (
+                      <div className="fleet-purchase-row" key={ship.type}>
+                        <div className="fleet-purchase-description">
+                          <strong>{ship.name} · {ship.length} puntos</strong>
+                          <small>{ship.ability} · Efecto acumulable hasta {MAX_STACKED_EFFECTS} veces</small>
+                        </div>
+                        <div className="fleet-purchase-counter">
+                          <button
+                            className="btn btn-outline-primary"
+                            type="button"
+                            aria-label={`Quitar ${ship.name}`}
+                            disabled={purchasedShipCounts[ship.type] === 0}
+                            onClick={() => refundShip(ship.type)}
+                          >
+                            −
+                          </button>
+                          <span title="Se pueden comprar más naves; solo dos activan el efecto">
+                            {purchasedShipCounts[ship.type]} compradas · {Math.min(
+                              purchasedShipCounts[ship.type],
+                              MAX_STACKED_EFFECTS,
+                            )} con efecto
+                          </span>
+                          <button
+                            className="btn btn-outline-primary"
+                            type="button"
+                            aria-label={`Comprar ${ship.name}`}
+                            disabled={remainingFleetPoints < ship.length}
+                            onClick={() => buyShip(ship.type)}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="fleet-purchase-footer">
+                    <span>
+                      Puntos usados: {purchasedFleetPoints}/{FLEET_POINTS}
+                      {' · '}Disponibles: {remainingFleetPoints}
+                    </span>
+                    <small>
+                      Los puntos sin gastar se convierten en munición adicional de cada tipo especial
+                      (máximo 3 por tipo).
+                    </small>
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      disabled={purchasedShipCount === 0}
+                      onClick={beginFleetPlacement}
+                    >
+                      Confirmar compra y colocar barcos
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="placement-options">
+                    {(isRealtimeMatch ? SHIP_TYPES : LEGACY_SHIP_LENGTHS).map((shipOption) => {
+                      const type = isRealtimeMatch ? shipOption.type : null
+                      const length = isRealtimeMatch ? shipOption.length : shipOption
+                      const name = isRealtimeMatch ? shipOption.name : `${length} casillas`
+                      const placedTypeCount = isRealtimeMatch
+                        ? ships.filter((ship) => ship.type === type).length
+                        : 0
+                      const remainingTypeCount = isRealtimeMatch
+                        ? purchasedShipCounts[type] - placedTypeCount
+                        : 1
+                      const selected = isRealtimeMatch
+                        ? selectedShipType === type
+                        : selectedShipLength === length
+                      return (
+                        <button
+                          className={`btn btn-outline-primary ship-size-button${selected ? ' selected' : ''}`}
+                          data-length={length}
+                          type="button"
+                          key={type || length}
+                          title={isRealtimeMatch ? shipOption.ability : name}
+                          disabled={isFleetReady || isSendingFleet
+                            || shipCount >= requiredShipCount
+                            || (isRealtimeMatch && remainingTypeCount <= 0)}
+                          onClick={() => {
+                            setSelectedShipLength(length)
+                            if (isRealtimeMatch) setSelectedShipType(type)
+                            setShipPreview([])
+                          }}
+                        >
+                          {isRealtimeMatch
+                            ? `${name} (${length}) · ${remainingTypeCount} por colocar`
+                            : name}
+                        </button>
+                      )
+                    })}
+                    <button
+                      className="btn btn-outline-danger"
+                      type="button"
+                      disabled={isFleetReady || isSendingFleet || shipCount === 0}
+                      onClick={undoLastShip}
+                    >
+                      Deshacer último barco
+                    </button>
+                  </div>
+                  <span id="placement-status">
+                    {isFleetReady
+                      ? isRealtimeMatch && matchGame?.phase !== 'active'
+                        ? 'Tu flota está lista. Espera a que tu rival confirme la suya.'
+                        : isRealtimeMatch && !isYourTurn
+                          ? `Tu flota está lista. Espera el turno de ${rival?.username || 'tu rival'}.`
+                          : 'Tu flota está completa. Puedes lanzar tus misiles.'
+                      : isSendingFleet
+                        ? 'Enviando tu flota al servidor…'
+                        : placementMessage || (shipCount >= requiredShipCount
+                          ? 'Flota completa. Deshaz la última nave para cambiarla o confirma para continuar.'
+                          : `Naves colocadas: ${shipCount}/${requiredShipCount}. ${isRealtimeMatch
+                            ? `Seleccionada: ${SHIP_TYPES.find((ship) => ship.type === selectedShipType).name}.`
+                            : `Longitud actual: ${selectedShipLength} casillas.`}`)}
+                  </span>
+                </>
+              )}
             </div>
           )}
           {gameError && <p className="game-error" role="alert">{gameError}</p>}

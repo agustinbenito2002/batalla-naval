@@ -55,9 +55,21 @@ button, input { font: inherit; }
 
 @media (max-width: 1050px) { #battle-app { padding: 10px; }.battle-layout { min-height: calc(100svh - 20px); grid-template-columns: 1fr; }.chat-panel { min-height: 420px; }.boards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .boards { grid-template-columns: 1fr; }.battle-header { align-items: flex-start; flex-wrap: wrap; }.turn-badge { order: -1; width: 100%; text-align: center; }.ammo-list { grid-template-columns: 1fr; }.player-card { font-size: 13px; } }
+@media (max-width: 760px) { .fleet-purchase-panel { grid-template-columns: 1fr; }.fleet-purchase-list { grid-template-columns: 1fr; } }
 
 .placement-options { align-items: center; }
 .ship-size-button { max-width: 240px; }
+.fleet-purchase-panel { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(230px, 1fr); gap: 14px; width: 100%; }
+.fleet-purchase-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.fleet-purchase-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 7px 9px; border: 1px solid #d1dce2; border-radius: 5px; background: rgba(255,255,255,.55); }
+.fleet-purchase-description { display: grid; gap: 3px; min-width: 0; color: #435969; font-size: 13px; }
+.fleet-purchase-description small { color: #70838f; font-size: 11px; }
+.fleet-purchase-counter { display: flex; align-items: center; gap: 7px; }
+.fleet-purchase-counter button { min-width: 32px; padding: 3px 8px; font-size: 16px; font-weight: 800; }
+.fleet-purchase-counter span { min-width: 30px; color: #435969; font-weight: 800; text-align: center; }
+.fleet-purchase-footer { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 7px; color: #435969; font-size: 13px; font-weight: 700; }
+.fleet-purchase-footer small { color: #70838f; font-size: 11px; font-weight: 400; }
+.fleet-purchase-footer button { margin-top: 3px; }
 .ammo-note { margin: 10px 0 0; color: #557081; font-size: 12px; }
 .radar-detected { box-shadow: inset 0 0 0 3px #d94848 !important; }
 .radar-clear { box-shadow: inset 0 0 0 3px #4e96bd !important; }
