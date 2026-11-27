@@ -247,7 +247,7 @@ function MainMenu() {
   }, [onlineUsersStatus, requestSpectatorMatches, spectatorSelectionOpen])
 
   return (
-    <main className="game-shell">
+    <main className={`game-shell${privateChatUser ? ' has-private-chat' : ''}`}>
       <aside className="menu-panel" aria-label="Menú principal">
         <button
           className={`btn btn-secondary menu-button username${selectedButtons.includes('username') ? ' is-selected' : ''}`}
@@ -501,9 +501,13 @@ function PrivateChatDialog({
       <p className="private-chat-temporary">Chat privado temporal</p>
       <div className="private-chat-messages" aria-live="polite">
         {messages.map((chatMessage, index) => (
-          <p key={chatMessage.id || `${chatMessage.receivedAt}-${index}`}>
-            <b>{chatMessage.username === currentUsername ? 'Tú' : chatMessage.username}:</b> {chatMessage.text}
-          </p>
+          <div
+            className={`private-chat-message${chatMessage.username === currentUsername ? ' is-own' : ''}`}
+            key={chatMessage.id || `${chatMessage.receivedAt}-${index}`}
+          >
+            <b>{chatMessage.username === currentUsername ? 'Tú' : chatMessage.username}</b>
+            <span>{chatMessage.text}</span>
+          </div>
         ))}
       </div>
       <form onSubmit={onSubmit}>

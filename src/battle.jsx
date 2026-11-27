@@ -10,11 +10,10 @@ const BOARD_SIZE = 15
 const BOARD_CELLS = Array.from({ length: BOARD_SIZE ** 2 }, (_, index) => index)
 const COLUMN_LABELS = 'ABCDEFGHIJKLMNO'.split('')
 const FLEET_POINTS = 12
-const MAX_STACKED_EFFECTS = 2
 const SHIP_TYPES = [
-  { type: 'seriousGirl', name: 'Chica seria', length: 2, ability: 'Invisible al radar; esquiva bombardeos' },
-  { type: 'vanguard', name: 'Vanguardia Tipo 1', length: 3, ability: 'Intercepta el primer misil que recibe' },
-  { type: 'coordinator', name: 'Coordinadora Tipo 2', length: 3, ability: 'Otorga un ataque normal extra por turno' },
+  { type: 'seriousGirl', name: 'Lancha', length: 2, ability: 'Invisible al radar; esquiva bombardeos' },
+  { type: 'vanguard', name: 'Vanguardia', length: 3, ability: 'Cada nave intercepta el primer misil que recibe (1 por nave)' },
+  { type: 'coordinator', name: 'Coordinadora', length: 3, ability: 'Otorga un ataque normal extra por turno' },
   { type: 'battleship', name: 'Acorazado', length: 4, ability: 'El ataque en cruz ignora su resistencia' },
   { type: 'carrier', name: 'Portaaviones', length: 4, ability: 'Munición extra mientras permanezca intacto' },
 ]
@@ -685,19 +684,28 @@ function BattlePage() {
           </header>
 
           <button className="btn btn-danger leave-battle-button" type="button" onClick={leaveBattle}>
-            salir batalla
+            Salir
           </button>
 
           {!isSpectatorMode && (
+            isFleetReady ? (
+              <AmmoPanel
+                isRealtimeMatch={isRealtimeMatch}
+                matchGame={matchGame}
+                hasGameEnded={hasGameEnded}
+                selectedAttack={selectedAttack}
+                onSelectAttack={setSelectedAttack}
+              />
+            ) : (
             <div className="placement-toolbar">
-              {isRealtimeMatch && isBuyingFleet && !isFleetReady ? (
+              {isRealtimeMatch && isBuyingFleet ? (
                 <div className="fleet-purchase-panel">
                   <div className="fleet-purchase-list">
                     {SHIP_TYPES.map((ship) => (
                       <div className="fleet-purchase-row" key={ship.type}>
                         <div className="fleet-purchase-description">
                           <strong>{ship.name} · {ship.length} puntos</strong>
-                          <small>{ship.ability} · Efecto acumulable hasta {MAX_STACKED_EFFECTS} veces</small>
+                          <small>{ship.ability}</small>
                         </div>
                         <div className="fleet-purchase-counter">
                           <button
@@ -709,11 +717,8 @@ function BattlePage() {
                           >
                             −
                           </button>
-                          <span title="Se pueden comprar más naves; solo dos activan el efecto">
-                            {purchasedShipCounts[ship.type]} compradas · {Math.min(
-                              purchasedShipCounts[ship.type],
-                              MAX_STACKED_EFFECTS,
-                            )} con efecto
+                          <span aria-label={`${purchasedShipCounts[ship.type]} ${ship.name} compradas`}>
+                            {purchasedShipCounts[ship.type]}
                           </span>
                           <button
                             className="btn btn-outline-primary"
@@ -731,11 +736,13 @@ function BattlePage() {
                   <div className="fleet-purchase-footer">
                     <span>
                       Puntos usados: {purchasedFleetPoints}/{FLEET_POINTS}
-                      {' · '}Disponibles: {remainingFleetPoints}
                     </span>
                     <small>
                       Los puntos sin gastar se convierten en munición adicional de cada tipo especial
                       (máximo 3 por tipo).
+                    </small>
+                    <small>
+                      Los efectos especiales de Coordinadora y Portaaviones se acumulan hasta 2 veces cada uno.
                     </small>
                     <button
                       className="btn btn-primary"
@@ -812,6 +819,7 @@ function BattlePage() {
                 </>
               )}
             </div>
+            )
           )}
           {gameError && <p className="game-error" role="alert">{gameError}</p>}
 
@@ -825,7 +833,7 @@ function BattlePage() {
             {turnStatus}
           </div>
 
-          <div className="boards">
+          <div className={`boards${!isSpectatorMode && !isFleetReady ? ' is-setting-fleet' : ''}`}>
             <section className="board-card">
               <div className="board-title">
                 <span>{isSpectatorMode
@@ -894,6 +902,7 @@ function BattlePage() {
               </p>
             </section>
 
+            {(isSpectatorMode || isFleetReady) && (
             <section className="board-card">
               <div className="board-title">
                 <span>{isSpectatorMode
@@ -964,66 +973,9 @@ function BattlePage() {
                   : 'Selecciona una casilla para atacar; los impactos se muestran aquí'}
               </p>
             </section>
+            )}
           </div>
 
-          {!isSpectatorMode && (
-            <section className="ammo-panel">
-              <div className="section-heading">
-                <h2>Municiones</h2>
-                <span>selecciona un ataque</span>
-              </div>
-              <div className="ammo-list">
-                <button
-                  className={`btn btn-outline-secondary ammo-button${selectedAttack === 'normal' ? ' selected' : ''}`}
-                  type="button"
-                  disabled={hasGameEnded || (isRealtimeMatch
-                    && !matchGame?.primaryActionAvailable
-                    && !matchGame?.extraNormalAvailable)}
-                  onClick={() => setSelectedAttack('normal')}
-                >
-                  <span className="ammo-icon">✦</span>
-                  <span><strong>Ataque normal</strong><small>Infinito; extra si la Coordinadora sigue operativa</small></span>
-                </button>
-                <button
-                  className={`btn btn-outline-secondary ammo-button${selectedAttack === 'cross' ? ' selected' : ''}`}
-                  type="button"
-                  disabled={hasGameEnded || (isRealtimeMatch && (
-                    matchGame?.ammo?.cross <= 0 || !matchGame?.primaryActionAvailable
-                  ))}
-                  onClick={() => setSelectedAttack('cross')}
-                >
-                  <span className="ammo-icon">◈</span>
-                  <span><strong>Ataque en cruz ({matchGame?.ammo?.cross ?? (isRealtimeMatch ? '—' : '∞')})</strong><small>5 casillas en cruz</small></span>
-                </button>
-                <button
-                  className={`btn btn-outline-secondary ammo-button${selectedAttack === 'bombardment' ? ' selected' : ''}`}
-                  type="button"
-                  disabled={hasGameEnded || (isRealtimeMatch && (
-                    matchGame?.ammo?.bombardment <= 0 || !matchGame?.primaryActionAvailable
-                  ))}
-                  onClick={() => setSelectedAttack('bombardment')}
-                >
-                  <span className="ammo-icon">✚</span>
-                  <span><strong>Bombardeo ({matchGame?.ammo?.bombardment ?? (isRealtimeMatch ? '—' : '∞')})</strong><small>Área 5x5; la Chica seria lo esquiva</small></span>
-                </button>
-                {isRealtimeMatch && (
-                  <button
-                    className={`btn btn-outline-secondary ammo-button${selectedAttack === 'radar' ? ' selected' : ''}`}
-                    type="button"
-                    disabled={hasGameEnded
-                      || matchGame?.ammo?.radar <= 0
-                      || !matchGame?.primaryActionAvailable}
-                    onClick={() => setSelectedAttack('radar')}
-                  >
-                    <span className="ammo-icon">⌖</span>
-                    <span><strong>Radar ({matchGame?.ammo?.radar ?? 0})</strong><small>Escanea 37 casillas en el patrón 7×7; consume el turno</small></span>
-                  </button>
-                )}
-              </div>
-              {isRealtimeMatch && matchGame?.extraNormalAvailable
-                && <p className="ammo-note">La Coordinadora está activa: después de la acción principal puedes hacer un ataque normal extra.</p>}
-            </section>
-          )}
         </section>
 
         <aside className="chat-panel">
@@ -1102,6 +1054,73 @@ function BattlePage() {
       </main>
       {dialog}
     </div>
+  )
+}
+
+function AmmoPanel({
+  isRealtimeMatch,
+  matchGame,
+  hasGameEnded,
+  selectedAttack,
+  onSelectAttack,
+}) {
+  return (
+    <section className="ammo-panel">
+      <div className="section-heading">
+        <h2>Municiones</h2>
+        <span>selecciona un ataque</span>
+      </div>
+      <div className="ammo-list">
+        <button
+          className={`btn btn-outline-secondary ammo-button${selectedAttack === 'normal' ? ' selected' : ''}`}
+          type="button"
+          disabled={hasGameEnded || (isRealtimeMatch
+            && !matchGame?.primaryActionAvailable
+            && !matchGame?.extraNormalAvailable)}
+          onClick={() => onSelectAttack('normal')}
+        >
+          <span className="ammo-icon">✦</span>
+          <span><strong>Ataque normal</strong><small>Infinito; extra si la Coordinadora sigue operativa</small></span>
+        </button>
+        <button
+          className={`btn btn-outline-secondary ammo-button${selectedAttack === 'cross' ? ' selected' : ''}`}
+          type="button"
+          disabled={hasGameEnded || (isRealtimeMatch && (
+            matchGame?.ammo?.cross <= 0 || !matchGame?.primaryActionAvailable
+          ))}
+          onClick={() => onSelectAttack('cross')}
+        >
+          <span className="ammo-icon">◈</span>
+          <span><strong>Ataque en cruz ({matchGame?.ammo?.cross ?? (isRealtimeMatch ? '—' : '∞')})</strong><small>5 casillas en cruz</small></span>
+        </button>
+        <button
+          className={`btn btn-outline-secondary ammo-button${selectedAttack === 'bombardment' ? ' selected' : ''}`}
+          type="button"
+          disabled={hasGameEnded || (isRealtimeMatch && (
+            matchGame?.ammo?.bombardment <= 0 || !matchGame?.primaryActionAvailable
+          ))}
+          onClick={() => onSelectAttack('bombardment')}
+        >
+          <span className="ammo-icon">✚</span>
+          <span><strong>Bombardeo ({matchGame?.ammo?.bombardment ?? (isRealtimeMatch ? '—' : '∞')})</strong><small>Área 5x5; la Lancha lo esquiva</small></span>
+        </button>
+        {isRealtimeMatch && (
+          <button
+            className={`btn btn-outline-secondary ammo-button${selectedAttack === 'radar' ? ' selected' : ''}`}
+            type="button"
+            disabled={hasGameEnded
+              || matchGame?.ammo?.radar <= 0
+              || !matchGame?.primaryActionAvailable}
+            onClick={() => onSelectAttack('radar')}
+          >
+            <span className="ammo-icon">⌖</span>
+            <span><strong>Radar ({matchGame?.ammo?.radar ?? 0})</strong><small>Escanea 37 casillas en el patrón 7×7; consume el turno</small></span>
+          </button>
+        )}
+      </div>
+      {isRealtimeMatch && matchGame?.extraNormalAvailable
+        && <p className="ammo-note">La Coordinadora está activa: después de la acción principal puedes hacer un ataque normal extra.</p>}
+    </section>
   )
 }
 

@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './login.css'
-import { requestBackend, saveAuthToken, saveAuthUserId } from './backendApi.js'
+import { requestBackend } from './backendApi.js'
 
 function PasswordField({ id, label, value, onChange, autoComplete, minLength }) {
   const [visible, setVisible] = useState(false)
@@ -43,6 +43,15 @@ function RegisterPage() {
   const [registered, setRegistered] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  useEffect(() => {
+    if (!registered) return undefined
+
+    const redirectTimeout = window.setTimeout(() => {
+      window.location.href = '/'
+    }, 1500)
+    return () => window.clearTimeout(redirectTimeout)
+  }, [registered])
+
   const register = async (event) => {
     event.preventDefault()
     const cleanUsername = username.trim()
@@ -65,13 +74,10 @@ function RegisterPage() {
     setIsSubmitting(true)
     setMessage('')
     try {
-      const result = await requestBackend('/api/auth/register', {
+      await requestBackend('/api/auth/register', {
         method: 'POST',
         body: { username: cleanUsername, password },
       })
-      localStorage.setItem('battle-naval-current-user', result.user?.username || cleanUsername)
-      saveAuthToken(result.accessToken || result.token || result.session?.access_token)
-      saveAuthUserId(result.user?.id || result.session?.user?.id)
       setRegistered(true)
     } catch (error) {
       setMessage(error.message)
@@ -118,36 +124,20 @@ function RegisterPage() {
                 {isSubmitting ? 'enviando…' : 'registrar usuario'}
               </button>
               <button
-                className="btn btn-secondary form-button secondary-button"
+                className="btn btn-secondary form-button"
                 type="button"
                 onClick={() => { window.location.href = '/' }}
               >
-                volver a iniciar sesión
+                iniciar sesión
               </button>
             </div>
             <p className="form-message" aria-live="polite">{message}</p>
           </form>
         ) : (
-          <div className="registration-success" role="dialog" aria-modal="true" aria-labelledby="success-title">
+          <div className="registration-success" role="status" aria-live="polite" aria-labelledby="success-title">
             <div className="registration-success-window">
-              <h2 id="success-title">Usuario registrado exitosamente</h2>
-              <p>¿Qué deseas hacer ahora?</p>
-              <div className="form-actions">
-                <button
-                  className="btn btn-primary form-button"
-                  type="button"
-                  onClick={() => { window.location.href = '/' }}
-                >
-                  iniciar sesión
-                </button>
-                <button
-                  className="btn btn-secondary form-button secondary-button"
-                  type="button"
-                  onClick={() => { window.location.href = '/main.html' }}
-                >
-                  continuar en el sitio
-                </button>
-              </div>
+              <h2 id="success-title">Registro exitoso</h2>
+              <p>Tu cuenta se creó correctamente. Redirigiendo al inicio de sesión…</p>
             </div>
           </div>
         )}

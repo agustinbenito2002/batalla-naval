@@ -24,6 +24,10 @@ button { font: inherit; }
   gap: clamp(16px, 2vw, 30px);
 }
 
+.game-shell.has-private-chat {
+  grid-template-columns: minmax(220px, 280px) minmax(280px, 340px) minmax(0, 1fr);
+}
+
 .menu-panel {
   display: flex;
   flex-direction: column;
@@ -316,7 +320,7 @@ button { font: inherit; }
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 32px auto minmax(0, 1fr) auto auto;
+  grid-template-rows: 48px auto minmax(0, 1fr) auto auto;
   overflow: hidden;
 }
 
@@ -325,37 +329,73 @@ button { font: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 2px;
+  padding: 0 8px;
   border-bottom: 1px solid #b3c2ca;
   background: rgba(222, 232, 237, 0.9);
 }
 
-.private-chat-dialog h2 { min-width: 0; margin: 0; font-size: 17px; overflow-wrap: anywhere; }
-.private-chat-dialog header button { flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #344b5b; font-size: 24px; line-height: 1; }
+.private-chat-dialog h2 { min-width: 0; margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.private-chat-dialog header button { flex: 0 0 32px; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #344b5b; font-size: 26px; line-height: 1; }
 .private-chat-dialog header button:hover { background: rgba(139, 207, 224, 0.55); }
-.private-chat-temporary { margin: 0; padding: 5px 12px; color: #657782; font-size: 12px; }
+.private-chat-temporary { margin: 0; padding: 8px 12px 4px; color: #657782; font-size: 12px; }
 
 .private-chat-messages {
   min-height: 0;
   overflow-y: auto;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px 10px;
 }
 
-.private-chat-messages p { margin: 0 0 9px; overflow-wrap: anywhere; }
+.private-chat-message {
+  max-width: 88%;
+  align-self: flex-start;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid #c1ced5;
+  border-radius: 10px 10px 10px 3px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.private-chat-message.is-own {
+  align-self: flex-end;
+  border-color: #86becd;
+  border-radius: 10px 10px 3px 10px;
+  background: #dff3f8;
+}
+
+.private-chat-message b {
+  color: #526774;
+  font-size: 11px;
+}
+
+.private-chat-message span {
+  font-size: 14px;
+  line-height: 1.35;
+}
 
 .private-chat-dialog form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
-  padding: 9px;
+  padding: 10px;
   border-top: 1px solid #b3c2ca;
 }
 
 .private-chat-dialog form input {
   min-width: 0;
-  padding: 7px 9px;
+  min-height: 42px;
+  padding: 8px 10px;
   border: 1px solid #9eb4c2;
-  border-radius: 4px;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.private-chat-dialog form .btn {
+  min-height: 38px;
 }
 
 .private-chat-dialog > .chat-error { padding: 0 10px 8px; }
@@ -517,6 +557,7 @@ button { font: inherit; }
     grid-template-columns: 1fr;
     gap: 28px;
   }
+  .game-shell.has-private-chat { grid-template-columns: 1fr; }
   .menu-panel { gap: 18px; }
   .username, .exit-button { margin: 0; }
   .menu-actions { gap: 12px; }

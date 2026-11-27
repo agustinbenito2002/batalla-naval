@@ -10,7 +10,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
+body { margin: 0; min-width: 320px; background: #071b33; }
 button, input { font: inherit; }
 
 #login-app { min-height: 100svh; padding: 30px; background: #071b33; }

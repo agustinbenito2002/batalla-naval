@@ -71,7 +71,7 @@ function LoginPage() {
 
           <div className="form-actions">
             <button className="btn btn-primary form-button" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'conectando…' : 'confirmar'}
+              {isSubmitting ? 'conectando…' : 'iniciar sesion'}
             </button>
             <button
               className="btn btn-secondary form-button"
